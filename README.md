@@ -1,65 +1,65 @@
 # 📝 To-Do List App
 
-Application de gestion de tâches développée en **Vanilla JavaScript**
+Task management application developed in **Vanilla JavaScript**
 
-## 🚀 Fonctionnalités
-- Ajouter/supprimer des tâches
-- Marquer comme complétées/inachevées
-- Persistance des données (localStorage)
-- Compteurs dynamiques
+## 🚀 Features
+- Add/delete tasks
+- Mark as completed/uncompleted
+- Data persistence (localStorage)
+- Dynamic counters
 
-## 🧠 Persistance
-- Les tâches enregistrées dans le localStorage seront toujours disponibles
-- L'application chargera automatiquement les tâches au chargement de la page
+## 🧠 Persistence
+- Tasks saved in localStorage will always be available
+- The application will automatically load tasks on page load
 
-## ⚠️ Point à considérer
-- Une fois une tâche supprimée, elle ne sera plus disponible (aucune récupération possible)
-- Si le navigateur est réinitialisé, toutes les tâches seront perdues
-- Si vous exécutez `localStorage.clear()` dans votre console, toutes les tâches seront supprimées
+## ⚠️ Points to consider
+- Once a task is deleted, it will no longer be available (no recovery possible)
+- If the browser is reset, all tasks will be lost
+- If you run `localStorage.clear()` in your console, all tasks will be deleted
 
-## 🧯 Dépannage
-Si l'application ne fonctionne plus correctement, essayez les étapes suivantes :
-- Mettez à jour votre navigateur
-- Sauvegardez vos tâches manuellement :
-  1. Exécutez dans la console :
-   ```js
-   console.log(JSON.parse(localStorage.getItem("task")));
-   ```
-   2. Copiez les données affichées dans un fichier `.txt` 
-   3. Exécutez :
-    ```js
-   localStorage.clear() 
-   ```
-   pour réinitialiser l'application
+## 🧯 Troubleshooting
+If the application no longer works properly, try the following steps:
+- Update your browser
+- Save your tasks manually:
+1. Run in the console: 
+```js 
+console.log(JSON.parse(localStorage.getItem("task"))); 
+```
+2. Copy the displayed data into a `.txt` file
+3. Run:
+```js
+localStorage.clear()
+```
+to reset the application
 
-   4. Réinsérez vos données manuellement si besoin
-- Si le problème persiste laissez-moi un commentaire sur le [dépôt GitHub](https://github.com/Dioman-Keita/To-Do-List-App)
+4. Reinsert your data manually if necessary
+- If the problem persists, leave me a comment on the [GitHub repository](https://github.com/Dioman-Keita/To-Do-List-App)
 
-## 🛠️ Technologies utilisées
+## 🛠️ Technologies Used
 - JavaScript (ES6 modules)
 - HTML5
 - CSS3
 - localStorage
 
-## 📦 Aperçu
+## 📦 Overview
 ![To-Do List App](src/screenshots/image.png)
 ![To-Do List App](src/screenshots/image-2.png)
 ![To-Do List App](src/screenshots/image-3.png)
 
-## 📖 Utilisation
-Commencez par ouvrir le fichier `index.html` dans votre navigateur. Ensuite vous pourrez ajouter, supprimer et modifier le statut d'une tâche. Pour ce faire suivez les étapes suivantes :
+## 📖 Usage
+Start by opening the `index.html` file in your browser. You can then add, delete, and change the status of a task. To do so, follow these steps:
 
-**Ajouter une tâche**
+**Add a task**
 
-Entrez le nom de la tâche puis cliquez sur "Enregistrer"
+Enter the task name and click "Save"
 
-**Modifier son état**
+**Change its status**
 
-Cliquez sur `achevée` ou `inachevée` pour changer le statut
+Click `completed` or `uncompleted` to change the status.
 
-**Supprimer**
+**Delete**
 
-Cliquez sur `supprimer`
+Click `delete`
 
 ## Installation
 ```bash
@@ -67,12 +67,12 @@ git clone https://github.com/Dioman-Keita/To-Do-List-App
 cd To-Do-List-App
 ```
 
-### Pour le développement local :
-Si vous  êtes en local installer Live server :
+### For local development:
+If you are on a local server, install Live server:
 ```bash
 npm install -g live-server
 live-server
 ```
 
-## 📄 Licence
-Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+## 📄 License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
