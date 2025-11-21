@@ -63,7 +63,7 @@ Click `delete`
 
 ## Installation
 ```bash
-[git clone https://github.com/Dioman-Keita/to-do-list-app](https://github.com/Dioman-Keita/to-do-list-app.git)
+git clone https://github.com/Dioman-Keita/to-do-list-app
 cd to-do-list-app
 ```
 
