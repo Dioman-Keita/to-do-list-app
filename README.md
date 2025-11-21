@@ -63,8 +63,8 @@ Click `delete`
 
 ## Installation
 ```bash
-git clone https://github.com/Dioman-Keita/To-Do-List-App
-cd To-Do-List-App
+[git clone https://github.com/Dioman-Keita/to-do-list-app](https://github.com/Dioman-Keita/to-do-list-app.git)
+cd to-do-list-app
 ```
 
 ### For local development:
