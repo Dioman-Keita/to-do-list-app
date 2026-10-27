@@ -191,7 +191,7 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
             </button>
           ))}
         </div>
-        <div className="tool-group">
+        <div className="tool-group swatches">
           {COLORS.map((c) => (
             <button
               key={c}

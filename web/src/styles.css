@@ -1050,10 +1050,20 @@ li.done .task-text {
   padding: 0;
 }
 
+/* L'anneau de sélection (4 px) et le focus clavier (5 px) débordent de la pastille :
+   l'écart de 12 px les empêche de toucher la couleur voisine. Pas de scale, qui
+   agrandirait encore le débordement. */
+.tool-group.swatches {
+  gap: 12px;
+}
+
 .swatch.active {
   border-color: var(--ink);
-  transform: scale(1.2);
   box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
+}
+
+.swatch:focus-visible {
+  outline-offset: 3px;
 }
 
 .size {
