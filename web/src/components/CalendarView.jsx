@@ -14,6 +14,7 @@ export default function CalendarView({ currentDay, onPickDay }) {
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [days, setDays] = useState([]);
+  const [loadError, setLoadError] = useState('');
 
   const cells = useMemo(() => {
     const first = new Date(month);
@@ -23,8 +24,21 @@ export default function CalendarView({ currentDay, onPickDay }) {
   }, [month]);
 
   useEffect(() => {
+    // Ignorer la réponse d'un mois quitté entre-temps (navigation rapide).
+    let current = true;
     const last = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-    api.listDays(toKey(month), toKey(last)).then(setDays).catch(() => setDays([]));
+    setLoadError('');
+    api
+      .listDays(toKey(month), toKey(last))
+      .then((d) => current && setDays(d))
+      .catch((err) => {
+        if (!current) return;
+        setDays([]);
+        setLoadError(err.message);
+      });
+    return () => {
+      current = false;
+    };
   }, [month]);
 
   const byDay = Object.fromEntries(days.map((d) => [d.day, d]));
@@ -85,7 +99,8 @@ export default function CalendarView({ currentDay, onPickDay }) {
 
       <Page side="right" seed={`cal-${toKey(month)}`}>
         <h2 className="hand-title">Ce mois-ci</h2>
-        {!days.length && <p className="empty">Rien d’écrit ce mois-là… pour l’instant.</p>}
+        {loadError && <p className="form-error">Impossible de charger ce mois : {loadError}</p>}
+        {!days.length && !loadError && <p className="empty">Rien d’écrit ce mois-là… pour l’instant.</p>}
         <ul className="month-list">
           {days.map((d, i) => (
             <motion.li key={d.day} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}>

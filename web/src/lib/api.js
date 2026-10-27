@@ -40,7 +40,19 @@ export const api = {
   updateTask: (id, patch) => request('PATCH', `/api/tasks/${id}`, patch),
   deleteTask: (id) => request('DELETE', `/api/tasks/${id}`),
 
-  listMedia: (kind) => request('GET', `/api/media?kind=${kind}`),
+  listMediaPage: (kind, before) =>
+    request('GET', `/api/media?kind=${kind}&limit=200${before ? `&before=${encodeURIComponent(before)}` : ''}`),
+  // Récupère toutes les pages (quelques Ko de JSON par page ; les images restent chargées à la demande).
+  async listMedia(kind) {
+    const all = [];
+    let before = null;
+    do {
+      const page = await api.listMediaPage(kind, before);
+      all.push(...page.items);
+      before = page.next;
+    } while (before);
+    return all;
+  },
   uploadMedia: (day, kind, blob, name) => request('POST', `/api/days/${day}/media`, fileForm(blob, name, { kind })),
   saveDrawing: (id, blob) => request('PUT', `/api/media/${id}/drawing`, fileForm(blob, 'dessin.png')),
   updateMedia: (id, patch) => request('PATCH', `/api/media/${id}`, patch),

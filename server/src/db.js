@@ -3,7 +3,11 @@ import pg from 'pg';
 // Garder les colonnes "date" sous forme "YYYY-MM-DD" (pas de décalage de fuseau).
 pg.types.setTypeParser(1082, (v) => v);
 
+// Sans DATABASE_URL, pg lit PGHOST, PGUSER, PGPASSWORD… (cas de docker-compose).
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+// Une connexion inactive coupée (redémarrage de Postgres) ne doit pas faire planter l'app.
+pool.on('error', (err) => console.error('Connexion Postgres perdue :', err.message));
 
 // Chaque entrée est appliquée une seule fois, dans l'ordre. Ne jamais modifier
 // une migration déjà déployée : en ajouter une nouvelle à la fin.

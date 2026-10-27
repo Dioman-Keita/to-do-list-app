@@ -107,7 +107,7 @@ docker compose stop app
 ```
 
 ```bash
-docker compose run --rm --entrypoint sh backup /scripts/restore.sh 2026-10-27_0300
+docker compose run --rm --entrypoint sh backup /scripts/restore.sh 2026-10-27_030000
 ```
 
 ```bash

@@ -193,18 +193,30 @@ apiRouter.delete(
   })
 );
 
+// Liste paginée (plus récent d'abord). `before` = "<jour>_<id>" du dernier élément reçu.
 apiRouter.get(
   '/media',
   ah(async (req, res) => {
     const kind = ['photo', 'sketch'].includes(req.query.kind) ? req.query.kind : null;
-    const limit = Math.min(Number(req.query.limit) || 500, 2000);
+    const asked = Math.trunc(Number(req.query.limit));
+    const limit = Number.isFinite(asked) && asked >= 1 ? Math.min(asked, 2000) : 500;
+    let beforeDay = null;
+    let beforeId = null;
+    if (req.query.before) {
+      const [d, id] = String(req.query.before).split('_');
+      beforeDay = parseDay(d);
+      beforeId = parseId(id);
+    }
     const { rows } = await pool.query(
       `SELECT ${MEDIA_COLS} FROM media
        WHERE deleted_at IS NULL AND ($1::text IS NULL OR kind = $1)
+         AND ($3::date IS NULL OR (day, id) < ($3::date, $4::int))
        ORDER BY day DESC, id DESC LIMIT $2`,
-      [kind, limit]
+      [kind, limit + 1, beforeDay, beforeId]
     );
-    res.json(rows);
+    const items = rows.slice(0, limit);
+    const last = items[items.length - 1];
+    res.json({ items, next: rows.length > limit ? `${last.day}_${last.id}` : null });
   })
 );
 
@@ -282,13 +294,20 @@ const FILE_RE = /^[0-9a-f-]{36}(-t)?\.(jpg|png|webp)$/;
 export function serveMedia(req, res) {
   if (!FILE_RE.test(req.params.name)) return res.status(404).end();
   // Les noms sont uniques (UUID) : le contenu ne change jamais, cache long.
-  res.sendFile(path.join(UPLOAD_DIR, req.params.name), { maxAge: '365d', immutable: true }, (err) => {
+  // `private` : ces images exigent une session, aucun cache partagé ne doit les garder.
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+  res.sendFile(path.join(UPLOAD_DIR, req.params.name), { cacheControl: false }, (err) => {
     if (err && !res.headersSent) res.status(404).end();
   });
 }
 
 export function errorHandler(err, req, res, _next) {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+  // Erreurs 4xx d'Express / body-parser (JSON mal formé, corps trop gros…).
+  if (err.expose && err.status >= 400 && err.status < 500) {
+    const messages = { 'entity.parse.failed': 'JSON invalide', 'entity.too.large': 'Requête trop lourde' };
+    return res.status(err.status).json({ error: messages[err.type] || err.message });
+  }
   if (err instanceof multer.MulterError) {
     const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Fichier trop lourd (30 Mo max)' : err.message;
     return res.status(400).json({ error: msg });

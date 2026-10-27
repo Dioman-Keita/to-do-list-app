@@ -24,7 +24,12 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-journal}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-journal}
+      # Paramètres séparés (pas d'URL) : le mot de passe peut contenir @, / ou :.
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-journal}
+      PGUSER: ${POSTGRES_USER:-journal}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
       APP_PASSWORD: ${APP_PASSWORD:?Définis APP_PASSWORD dans .env}
       SESSION_SECRET: ${SESSION_SECRET:?Définis SESSION_SECRET dans .env}
       JOURNAL_NAME: ${JOURNAL_NAME:-Mon journal}

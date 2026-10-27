@@ -10,6 +10,9 @@ const TOOLS = [
 ];
 const MAX_SIDE = 2000;
 const MAX_HISTORY = 15;
+// Chaque étape d'annulation garde une copie pleine résolution (4 octets/pixel) :
+// on borne la mémoire totale, pas seulement le nombre d'étapes (téléphones).
+const HISTORY_BUDGET_BYTES = 64 * 1024 * 1024;
 
 /**
  * Éditeur de dessin. Les traits sont sur un calque transparent : posé sur une photo
@@ -19,6 +22,7 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
   const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
   const W = Math.round(width * scale);
   const H = Math.round(height * scale);
+  const maxHistory = Math.max(1, Math.min(MAX_HISTORY, Math.floor(HISTORY_BUDGET_BYTES / (W * H * 4))));
 
   const mainRef = useRef(null);
   const previewRef = useRef(null);
@@ -31,13 +35,38 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Tant que le dessin existant n'est pas sur le canevas, on ne peut ni dessiner ni
+  // enregistrer : sinon on remplacerait l'ancien dessin par un calque vide ou partiel.
+  const [loadState, setLoadState] = useState(initialSrc ? 'loading' : 'ready');
+  const wrapRef = useRef(null);
+  const [box, setBox] = useState(null);
 
   useEffect(() => {
-    if (!initialSrc) return;
+    if (!initialSrc) return undefined;
+    let cancelled = false;
     const img = new Image();
-    img.onload = () => mainRef.current?.getContext('2d').drawImage(img, 0, 0, W, H);
+    img.onload = () => {
+      if (cancelled || !mainRef.current) return;
+      mainRef.current.getContext('2d').drawImage(img, 0, 0, W, H);
+      setLoadState('ready');
+    };
+    img.onerror = () => !cancelled && setLoadState('failed');
     img.src = initialSrc;
+    return () => {
+      cancelled = true;
+    };
   }, [initialSrc, W, H]);
+
+  // La barre d'outils peut passer sur plusieurs lignes : on dimensionne la feuille
+  // d'après la place réellement disponible.
+  useEffect(() => {
+    const el = wrapRef.current;
+    const ro = new ResizeObserver(([entry]) => setBox(entry.contentRect));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const stageWidth = box ? Math.max(120, Math.min(box.width, box.height * (W / H))) : null;
+  const ready = loadState === 'ready';
 
   function snapshot() {
     const copy = document.createElement('canvas');
@@ -45,7 +74,7 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
     copy.height = H;
     copy.getContext('2d').drawImage(mainRef.current, 0, 0);
     history.current.push(copy);
-    if (history.current.length > MAX_HISTORY) history.current.shift();
+    while (history.current.length > maxHistory) history.current.shift();
     setCanUndo(true);
     setDirty(true);
   }
@@ -71,7 +100,7 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
   }
 
   function onPointerDown(e) {
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if (!ready || (e.button !== 0 && e.pointerType === 'mouse')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     snapshot();
     const isMarker = tool === 'marker';
@@ -138,6 +167,7 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
   }
 
   function save() {
+    if (!ready) return;
     setSaving(true);
     setError('');
     mainRef.current.toBlob(async (blob) => {
@@ -187,7 +217,7 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
           <button type="button" className="tool" onClick={undo} disabled={!canUndo}>
             ↶ Annuler
           </button>
-          <button type="button" className="tool" onClick={clearAll}>
+          <button type="button" className="tool" onClick={clearAll} disabled={!ready}>
             Tout effacer
           </button>
         </div>
@@ -195,17 +225,21 @@ export default function DrawingEditor({ title, baseSrc, initialSrc, width, heigh
           <button type="button" className="tool" onClick={cancel}>
             Fermer
           </button>
-          <button type="button" className="tool primary" onClick={save} disabled={saving}>
+          <button type="button" className="tool primary" onClick={save} disabled={saving || !ready}>
             {saving ? 'Collage…' : 'Coller dans le journal'}
           </button>
         </div>
       </motion.div>
       {error && <p className="form-error editor-error">{error}</p>}
+      {loadState === 'loading' && <p className="editor-error">Chargement du dessin…</p>}
+      {loadState === 'failed' && (
+        <p className="form-error editor-error">Impossible de charger le dessin existant : enregistrement désactivé pour ne pas l’écraser.</p>
+      )}
 
-      <div className="editor-stage-wrap">
+      <div className="editor-stage-wrap" ref={wrapRef}>
         <motion.div
           className={`editor-stage ${baseSrc ? '' : 'sketch-paper'}`}
-          style={{ aspectRatio: `${W} / ${H}`, width: `min(96vw, calc((100dvh - 150px) * ${W / H}))` }}
+          style={{ aspectRatio: `${W} / ${H}`, width: stageWidth ?? '100%' }}
           initial={{ scale: 0.9, rotate: -2 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 160, damping: 18 }}

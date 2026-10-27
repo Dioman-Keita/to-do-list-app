@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 // La liste "À faire" (héritée de l'ancienne to-do list), version bout de papier scotché.
 export default function TaskList({ day, tasks, setTasks }) {
   const [draft, setDraft] = useState('');
+  const [error, setError] = useState('');
   const doneCount = tasks.filter((t) => t.done).length;
 
   async function add(e) {
@@ -12,22 +13,33 @@ export default function TaskList({ day, tasks, setTasks }) {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
-    const created = await api.addTask(day, text);
-    setTasks((ts) => [...ts, created]);
+    setError('');
+    try {
+      const created = await api.addTask(day, text);
+      setTasks((ts) => [...ts, created]);
+    } catch (err) {
+      setDraft(text);
+      setError(`Tâche non ajoutée : ${err.message}`);
+    }
   }
 
   async function update(task, patch) {
     setTasks((ts) => ts.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
     try {
       await api.updateTask(task.id, patch);
-    } catch {
+      setError('');
+    } catch (err) {
       setTasks((ts) => ts.map((t) => (t.id === task.id ? task : t)));
+      setError(`Modification non enregistrée : ${err.message}`);
     }
   }
 
   async function remove(task) {
     setTasks((ts) => ts.filter((t) => t.id !== task.id));
-    await api.deleteTask(task.id).catch(() => setTasks((ts) => [...ts, task]));
+    await api.deleteTask(task.id).catch((err) => {
+      setTasks((ts) => [...ts, task]);
+      setError(`Tâche non supprimée : ${err.message}`);
+    });
   }
 
   return (
@@ -69,6 +81,8 @@ export default function TaskList({ day, tasks, setTasks }) {
               </button>
               <span className="task-text-wrap">
                 <input
+                  // La clé suit le texte : si l'enregistrement échoue, le champ se remonte avec l'ancien texte.
+                  key={task.text}
                   className="task-text"
                   defaultValue={task.text}
                   aria-label="Tâche"
@@ -106,6 +120,11 @@ export default function TaskList({ day, tasks, setTasks }) {
         <span aria-hidden="true">+</span>
         <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="ajouter une tâche…" maxLength={200} />
       </form>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
     </motion.div>
   );
 }

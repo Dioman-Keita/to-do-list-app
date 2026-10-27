@@ -576,6 +576,13 @@ li.done .task-text {
   opacity: 1;
 }
 
+/* Écrans tactiles : pas de survol, le bouton reste visible. */
+@media (hover: none) {
+  .task-delete {
+    opacity: 0.6;
+  }
+}
+
 .task-add {
   display: flex;
   align-items: center;
@@ -680,6 +687,13 @@ li.done .task-text {
   background: linear-gradient(135deg, #f4f1e6, #cfc6b0, #6d6556);
   background-size: 300% 300%;
   animation: develop 2.4s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .developing {
+    animation: none;
+    background-position: 50% 50%;
+  }
 }
 
 @keyframes develop {
@@ -961,6 +975,12 @@ li.done .task-text {
   font-size: 17px;
 }
 
+.viewer-error {
+  background: var(--paper-light);
+  padding: 4px 12px;
+  margin: 0;
+}
+
 .viewer-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1068,10 +1088,11 @@ li.done .task-text {
 
 .editor-stage-wrap {
   flex: 1;
+  min-height: 0;
   display: grid;
   place-items: center;
   padding: 16px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .editor-stage {
