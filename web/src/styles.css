@@ -170,7 +170,7 @@ button:disabled {
 
 .spread {
   position: relative;
-  height: clamp(580px, calc(100dvh - 150px), 860px);
+  height: clamp(560px, calc(100dvh - 200px), 860px);
   perspective: 2200px;
 }
 
@@ -341,7 +341,17 @@ button:disabled {
 /* ---------- Journée : page gauche ---------- */
 .day-header {
   position: relative;
-  margin: 0 0 16px -8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 18px;
+  margin: 0 0 4px -8px;
+}
+
+.day-stickers {
+  flex: 1;
+  min-width: 260px;
+  padding-top: 4px;
 }
 
 .day-weekday {
@@ -360,8 +370,9 @@ button:disabled {
 
 .day-star {
   position: absolute;
-  left: 220px;
-  top: -10px;
+  left: -16px;
+  top: -18px;
+  z-index: 2;
 }
 
 .stickers {
@@ -372,8 +383,8 @@ button:disabled {
 }
 
 .sticker {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   border: 2px dashed transparent;
   background: rgba(255, 255, 255, 0.4);
@@ -400,7 +411,7 @@ button:disabled {
 
 .entry-title {
   width: 100%;
-  margin: 14px 0 4px;
+  margin: 6px 0 4px;
   border: 0;
   background: transparent;
   font-family: var(--font-title);
@@ -414,40 +425,15 @@ button:disabled {
   border-bottom-color: var(--pink);
 }
 
-.entry-body {
-  display: block;
-  width: 100%;
-  min-height: 340px;
-  border: 0;
-  resize: none;
-  overflow: hidden;
-  padding: 3px 6px 30px 52px;
-  font-size: 23px;
-  line-height: 34px;
-  background-color: rgba(250, 245, 232, 0.55);
-  background-image:
-    linear-gradient(90deg, transparent 38px, var(--margin) 38px, var(--margin) 40px, transparent 40px),
-    linear-gradient(transparent 33px, var(--line) 33px);
-  background-size: 100% 100%, 100% 34px;
-  border-radius: 3px;
-  box-shadow: 0 2px 6px rgba(60, 40, 10, 0.12);
-}
-
-.entry-body:focus {
-  outline: none;
-  box-shadow: 0 2px 10px rgba(239, 111, 166, 0.25);
-}
-
 ::placeholder {
   color: rgba(80, 72, 60, 0.45);
 }
 
 .save-status {
-  position: absolute;
-  right: 44px;
-  bottom: 28px;
+  margin-left: auto;
   font-size: 17px;
   color: var(--ink-soft);
+  white-space: nowrap;
 }
 
 .save-status.error {
@@ -868,14 +854,10 @@ li.done .task-text {
 
 /* ---------- Pied du carnet (bandes de papier) ---------- */
 .notebook-footer {
-  position: absolute;
-  left: 30px;
-  right: 30px;
-  bottom: -20px;
+  /* Sous les pages (et non plus par-dessus) : ne recouvre jamais le texte. */
   display: flex;
   justify-content: space-between;
-  pointer-events: none;
-  z-index: 5;
+  padding: 10px 20px 2px;
 }
 
 .footer-strip {
@@ -1253,6 +1235,329 @@ li.done .task-text {
   border-bottom-color: var(--pink);
 }
 
+/* ---------- Carnet page par page (éditeur) ---------- */
+.page-writing .page-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 20px;
+}
+
+.journal-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fmt-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 6px;
+}
+
+.fmt {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border: 1.5px solid transparent;
+  border-radius: 9px 7px 10px 6px;
+  background: rgba(255, 255, 255, 0.45);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.fmt:hover {
+  border-color: rgba(51, 48, 43, 0.35);
+}
+
+.fmt.active {
+  background: var(--yellow);
+  border-color: var(--ink);
+}
+
+.fmt-text {
+  font-size: 17px;
+}
+
+.fmt-big {
+  font-family: var(--font-title);
+  font-size: 23px;
+}
+
+.fmt-swatch {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px 6px 3px 5px;
+  border: 1.5px solid rgba(51, 48, 43, 0.5);
+}
+
+.fmt-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: rgba(51, 48, 43, 0.2);
+}
+
+.chapters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 6px;
+}
+
+.chapters button {
+  flex: none;
+  border: 0;
+  border-radius: 3px;
+  padding: 1px 10px 2px;
+  background: rgba(246, 223, 79, 0.35);
+  font-size: 16px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapters button.current {
+  background: var(--yellow);
+  box-shadow: 1px 2px 0 rgba(51, 48, 43, 0.4);
+}
+
+.chapters small {
+  color: var(--ink-soft);
+}
+
+.chapter-num {
+  font-family: var(--font-title);
+}
+
+.pages-frame {
+  position: relative;
+  flex: 1;
+  min-height: 204px;
+  overflow: hidden;
+}
+
+/* Une colonne CSS = une page. Le texte qui dépasse part dans la colonne suivante,
+   et la vue glisse de page en page (scrollLeft) : jamais de défilement vertical. */
+.journal-pages {
+  width: var(--page-w, 100%);
+  height: var(--page-h, 340px);
+  column-count: 1;
+  column-gap: 48px;
+  column-fill: auto;
+  overflow: hidden;
+  outline: none;
+  counter-reset: chapter;
+  font-size: 23px;
+  line-height: 34px;
+  background-color: rgba(250, 245, 232, 0.55);
+  background-image:
+    linear-gradient(90deg, transparent 38px, var(--margin) 38px, var(--margin) 40px, transparent 40px),
+    linear-gradient(transparent 33px, var(--line) 33px);
+  background-size: var(--stride, 100%) 100%, 100% 34px;
+  background-attachment: local, local;
+  box-shadow: 0 2px 6px rgba(60, 40, 10, 0.12);
+  caret-color: #c43d78;
+}
+
+.journal-pages > * {
+  margin: 0;
+  padding: 0 8px 0 52px;
+}
+
+.journal-pages ul,
+.journal-pages ol {
+  padding-left: 76px;
+}
+
+.journal-pages li p {
+  padding: 0;
+}
+
+/* Chapitre : exactement deux lignes, l'étiquette « Chapitre N » au-dessus du titre. */
+.journal-pages h2 {
+  position: relative;
+  counter-increment: chapter;
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 34px;
+  padding-top: 30px;
+  padding-bottom: 4px;
+  color: #3a2f45;
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+.journal-pages h2::before {
+  content: 'Chapitre ' counter(chapter);
+  position: absolute;
+  top: 8px;
+  left: 52px;
+  font-family: var(--font-hand);
+  font-size: 16px;
+  line-height: 1;
+  color: #c43d78;
+  letter-spacing: 0.04em;
+}
+
+.journal-pages h2[data-time]::after {
+  content: ' · ' attr(data-time);
+  font-family: var(--font-hand);
+  font-size: 17px;
+  color: var(--ink-soft);
+}
+
+.journal-pages .page-break {
+  break-after: column;
+  height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.journal-pages .page-break.ProseMirror-selectednode {
+  height: 4px;
+  background: var(--pink);
+}
+
+.journal-pages mark {
+  border-radius: 3px 6px 4px 5px;
+  padding: 0 1px;
+  color: inherit;
+}
+
+.journal-pages .big {
+  font-size: 1.35em;
+  font-family: var(--font-title);
+  line-height: 34px;
+}
+
+.journal-pages p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: rgba(80, 72, 60, 0.45);
+}
+
+/* Fautes : rouge ondulé pour l'orthographe, bleu pour la grammaire (comme Word). */
+.spell-error {
+  text-decoration: underline wavy #d6332b;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  text-decoration-skip-ink: none;
+}
+
+.grammar-error {
+  text-decoration: underline wavy #2f6fd6;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  text-decoration-skip-ink: none;
+}
+
+.spell-menu {
+  position: fixed;
+  z-index: 70;
+  width: 250px;
+  padding: 8px;
+  background: var(--paper-light) var(--noise);
+  border: 1.5px solid var(--ink);
+  border-radius: 10px 8px 12px 7px;
+  box-shadow: 3px 5px 0 rgba(51, 48, 43, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spell-menu button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 19px;
+}
+
+.spell-menu button:hover {
+  background: rgba(246, 223, 79, 0.6);
+}
+
+.spell-menu .spell-suggestion {
+  font-weight: 700;
+}
+
+.spell-message,
+.spell-none {
+  margin: 0 4px 4px;
+  font-size: 15px;
+  line-height: 1.25;
+  color: var(--ink-soft);
+}
+
+.spell-menu hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px dashed rgba(51, 48, 43, 0.3);
+  margin: 4px 0;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  font-size: 18px;
+  color: var(--ink-soft);
+}
+
+.pager button {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  font-size: 18px;
+  border-bottom: 1px dashed currentColor;
+}
+
+.pager button:hover:not(:disabled) {
+  color: #c43d78;
+}
+
+.spell-off {
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .pager,
+  .pager button {
+    font-size: 16px;
+  }
+
+  .spell-off {
+    display: none;
+  }
+}
+
+/* Reflet qui balaie la feuille quand on tourne la page. */
+.page-turn {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85) 45%, rgba(120, 90, 50, 0.18) 60%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-turn {
+    display: none;
+  }
+}
+
 /* ---------- Petits écrans : une page sous l'autre ---------- */
 @media (max-width: 900px) {
   body {
@@ -1342,6 +1647,19 @@ li.done .task-text {
 
   .entry-title {
     font-size: 24px;
+  }
+
+  .page-writing .page-content {
+    display: block;
+  }
+
+  .pages-frame {
+    flex: none;
+    height: 408px; /* 12 lignes */
+  }
+
+  .notebook-footer {
+    padding: 10px 6px 2px;
   }
 
   .tool-group.end {

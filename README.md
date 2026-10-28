@@ -29,7 +29,11 @@ maintenant dans la liste « À faire » de chaque journée.
 
 ## ✨ Fonctionnalités
 
-- **Une double page par jour** : date sur papier déchiré, humeur et météo en stickers, titre, texte sur papier ligné (enregistrement automatique).
+- **Une double page par jour** : date sur papier déchiré, humeurs (plusieurs à la fois, dont « Dans les nuages ») et météo en stickers, titre.
+- **Un carnet page par page** : le texte s'écrit sur des pages lignées de taille fixe, sans défilement. Quand une page est pleine, la suite passe toute seule à la page suivante ; « + Page » (ou Ctrl+Entrée) commence une nouvelle page sans finir la courante. Enregistrement automatique.
+- **Chapitres** : « + Chapitre » ouvre un nouveau chapitre dans la même journée (numéroté, avec l'heure). Le sommaire du jour permet d'y sauter.
+- **Mise en forme** : gras, italique, souligné, barré, texte en grand, surligneur jaune / rose / bleu.
+- **Correcteur français** : fautes d'orthographe soulignées en rouge, de grammaire en bleu ; clic droit pour les suggestions, « Ignorer » ou « Ajouter au dictionnaire ». Moteur LanguageTool exécuté en local (le texte ne quitte pas la machine) ; s'il ne répond pas, le correcteur du navigateur prend le relais.
 - **À faire** : tâches du jour, cochées au stylo et barrées à la main.
 - **Souvenirs** : ajoute des photos (bouton ou glisser-déposer) ; elles apparaissent en polaroïds.
 - **Dessiner sur les photos** : stylo (sensible à la pression avec un stylet), feutre transparent, gomme, 9 couleurs, annuler (Ctrl+Z). L'annotation est un calque séparé : la photo d'origine n'est jamais modifiée.
@@ -46,6 +50,8 @@ maintenant dans la liste « À faire » de chaque journée.
 | Front | React 18, Vite, Framer Motion, polices Patrick Hand & Gochi Hand (auto-hébergées via Fontsource) |
 | API | Node.js, Express, `pg`, Multer, Sharp (rotation EXIF, redimensionnement, vignettes WebP) |
 | Données | PostgreSQL 17 (texte, tâches, métadonnées) + volume Docker pour les images |
+| Éditeur | TipTap (ProseMirror), pages en colonnes CSS |
+| Correcteur | LanguageTool 6.8 (conteneur local, ~1 Go de RAM) |
 | Ops | Docker Compose, conteneur de sauvegarde automatique, Caddy (HTTPS) en option |
 
 ## 🚀 Lancer sur ton PC

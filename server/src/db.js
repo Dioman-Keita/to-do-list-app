@@ -46,6 +46,17 @@ const MIGRATIONS = [
      deleted_at timestamptz
    );
    CREATE INDEX media_day_idx ON media (day) WHERE deleted_at IS NULL;`,
+
+  // Pages, chapitres et humeurs multiples. Migration purement additive : les colonnes
+  // `body` (ancien texte brut) et `mood` restent intactes, rien n'est supprimé.
+  `ALTER TABLE entries ADD COLUMN moods text[] NOT NULL DEFAULT '{}';
+   UPDATE entries SET moods = ARRAY[mood] WHERE mood IS NOT NULL;
+   ALTER TABLE entries ADD COLUMN content jsonb;
+   ALTER TABLE entries ADD COLUMN content_text text NOT NULL DEFAULT '';
+   CREATE TABLE dictionary (
+     word text PRIMARY KEY,
+     created_at timestamptz NOT NULL DEFAULT now()
+   );`,
 ];
 
 async function waitForDatabase() {

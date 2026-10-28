@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../lib/api.js';
 import { longDate, todayKey, weekday } from '../lib/date.js';
 import { Page, Star, TornLabel } from './Decor.jsx';
 import Polaroid from './Polaroid.jsx';
 import TaskList from './TaskList.jsx';
+import JournalEditor from './JournalEditor.jsx';
 
 export const MOODS = [
   { id: 'joie', emoji: '😄', label: 'Joyeux' },
@@ -14,6 +15,7 @@ export const MOODS = [
   { id: 'triste', emoji: '😢', label: 'Triste' },
   { id: 'colere', emoji: '😠', label: 'En colère' },
   { id: 'fatigue', emoji: '😴', label: 'Fatigué' },
+  { id: 'reveur', emoji: '😶‍🌫️', label: 'Dans les nuages' },
 ];
 const WEATHER = [
   { id: 'soleil', emoji: '☀️', label: 'Soleil' },
@@ -23,7 +25,6 @@ const WEATHER = [
   { id: 'neige', emoji: '❄️', label: 'Neige' },
   { id: 'brume', emoji: '🌫️', label: 'Brume' },
 ];
-const STATUS_TEXT = { dirty: '…', saving: 'j’écris…', saved: 'enregistré ✓', error: 'pas enregistré ✗' };
 
 export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   const [entry, setEntry] = useState(null);
@@ -35,7 +36,6 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   const pending = useRef(null);
   const timer = useRef(null);
   const fileInput = useRef(null);
-  const bodyRef = useRef(null);
   const firstLoad = useRef(true);
 
   useEffect(() => {
@@ -73,8 +73,9 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
     }
   }
 
-  function patchEntry(patch) {
-    setEntry((e) => ({ ...e, ...patch }));
+  // `display: false` : le texte vit dans l'éditeur, inutile de re-rendre la page à chaque frappe.
+  function patchEntry(patch, { display = true } = {}) {
+    if (display) setEntry((e) => ({ ...e, ...patch }));
     pending.current = { ...pending.current, ...patch };
     setStatus('dirty');
     clearTimeout(timer.current);
@@ -91,13 +92,6 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(el.scrollHeight, 340)}px`;
-  }, [entry?.body]);
 
   async function uploadFiles(files) {
     const list = [...files].filter((f) => f.type.startsWith('image/'));
@@ -119,28 +113,31 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   if (!entry) return <Page side="left" seed={day} />;
 
   const isToday = day === todayKey();
+  const toggleMood = (id) =>
+    patchEntry({ moods: entry.moods.includes(id) ? entry.moods.filter((m) => m !== id) : [...entry.moods, id] });
 
   return (
     <>
-      <Page side="left" seed={day}>
+      <Page side="left" seed={day} className="page-writing">
         <header className="day-header">
           <TornLabel tilt={-2}>
             <span className="day-weekday">{weekday(day)}</span>
             <span className="day-date">{longDate(day)}</span>
           </TornLabel>
-          {isToday && <Star className="day-star" size={40} delay={0.4} />}
+          {isToday && <Star className="day-star" size={36} delay={0.4} />}
+          <div className="day-stickers">
+            <div className="stickers" role="group" aria-label="Humeurs (plusieurs possibles)">
+              {MOODS.map((m) => (
+                <StickerButton key={m.id} item={m} active={entry.moods.includes(m.id)} onClick={() => toggleMood(m.id)} />
+              ))}
+            </div>
+            <div className="stickers stickers-small" role="group" aria-label="Météo">
+              {WEATHER.map((w) => (
+                <StickerButton key={w.id} item={w} active={entry.weather === w.id} onClick={() => patchEntry({ weather: entry.weather === w.id ? null : w.id })} />
+              ))}
+            </div>
+          </div>
         </header>
-
-        <div className="stickers" role="group" aria-label="Humeur">
-          {MOODS.map((m) => (
-            <StickerButton key={m.id} item={m} active={entry.mood === m.id} onClick={() => patchEntry({ mood: entry.mood === m.id ? null : m.id })} />
-          ))}
-        </div>
-        <div className="stickers stickers-small" role="group" aria-label="Météo">
-          {WEATHER.map((w) => (
-            <StickerButton key={w.id} item={w} active={entry.weather === w.id} onClick={() => patchEntry({ weather: entry.weather === w.id ? null : w.id })} />
-          ))}
-        </div>
 
         <input
           className="entry-title"
@@ -150,21 +147,13 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
           onChange={(e) => patchEntry({ title: e.target.value })}
           onBlur={() => flush()}
         />
-        <textarea
-          ref={bodyRef}
-          className="entry-body"
-          value={entry.body}
-          placeholder="Cher journal, aujourd’hui…"
-          onChange={(e) => patchEntry({ body: e.target.value })}
-          onBlur={() => flush()}
+        <JournalEditor
+          content={entry.content}
+          legacyBody={entry.body}
+          isToday={isToday}
+          status={status}
+          onChange={(content, text) => patchEntry({ content, content_text: text }, { display: false })}
         />
-        <AnimatePresence>
-          {status && (
-            <motion.span key={status} className={`save-status ${status}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              {STATUS_TEXT[status]}
-            </motion.span>
-          )}
-        </AnimatePresence>
       </Page>
 
       <Page side="right" seed={day}>
