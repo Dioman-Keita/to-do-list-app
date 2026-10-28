@@ -14,6 +14,8 @@ const MAX_SIDE = 2400;
 const THUMB_SIDE = 640;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MEDIA_COLS = 'id, day, kind, file, thumb, overlay, caption, width, height, tilt, created_at';
+const ENTRY_COLS = 'day, title, body, moods, weather, content, content_text, updated_at';
+const SPELLCHECK_URL = (process.env.SPELLCHECK_URL || '').replace(/\/$/, '');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -94,11 +96,12 @@ apiRouter.get(
     const to = parseDay(req.query.to);
     const { rows } = await pool.query(
       `WITH d AS (
-         SELECT day FROM entries WHERE day BETWEEN $1 AND $2 AND (title <> '' OR body <> '' OR mood IS NOT NULL)
+         SELECT day FROM entries WHERE day BETWEEN $1 AND $2
+           AND (title <> '' OR body <> '' OR content_text <> '' OR cardinality(moods) > 0)
          UNION SELECT day FROM tasks WHERE day BETWEEN $1 AND $2
          UNION SELECT day FROM media WHERE day BETWEEN $1 AND $2 AND deleted_at IS NULL
        )
-       SELECT d.day, e.title, e.mood, e.weather,
+       SELECT d.day, e.title, coalesce(e.moods, '{}') AS moods, e.weather,
          (SELECT count(*)::int FROM tasks t WHERE t.day = d.day) AS tasks,
          (SELECT count(*)::int FROM tasks t WHERE t.day = d.day AND t.done) AS done,
          (SELECT count(*)::int FROM media m WHERE m.day = d.day AND m.deleted_at IS NULL) AS media,
@@ -117,13 +120,13 @@ apiRouter.get(
   ah(async (req, res) => {
     const day = parseDay(req.params.day);
     const [entry, tasks, media] = await Promise.all([
-      pool.query('SELECT day, title, body, mood, weather, updated_at FROM entries WHERE day = $1', [day]),
+      pool.query(`SELECT ${ENTRY_COLS} FROM entries WHERE day = $1`, [day]),
       pool.query('SELECT id, day, text, done, position FROM tasks WHERE day = $1 ORDER BY position, id', [day]),
       pool.query(`SELECT ${MEDIA_COLS} FROM media WHERE day = $1 AND deleted_at IS NULL ORDER BY id`, [day]),
     ]);
     res.json({
       day,
-      entry: entry.rows[0] || { day, title: '', body: '', mood: null, weather: null },
+      entry: entry.rows[0] || { day, title: '', body: '', moods: [], weather: null, content: null, content_text: '' },
       tasks: tasks.rows,
       media: media.rows,
     });
@@ -134,20 +137,29 @@ apiRouter.put(
   '/days/:day',
   ah(async (req, res) => {
     const day = parseDay(req.params.day);
-    const fields = ['title', 'body', 'mood', 'weather'].filter((f) => f in (req.body || {}));
+    const fields = ['title', 'body', 'moods', 'weather', 'content', 'content_text'].filter((f) => f in (req.body || {}));
     if (!fields.length) throw new HttpError(400, 'Rien à enregistrer');
     const values = fields.map((f) => {
       const v = req.body[f];
-      if (f === 'title' || f === 'body') return String(v ?? '');
-      return v ? String(v).slice(0, 32) : null;
+      if (f === 'moods') {
+        if (!Array.isArray(v)) throw new HttpError(400, 'Humeurs invalides');
+        return [...new Set(v.map((m) => String(m).slice(0, 32)))].slice(0, 12);
+      }
+      if (f === 'content') {
+        if (v !== null && (typeof v !== 'object' || v.type !== 'doc')) throw new HttpError(400, 'Contenu invalide');
+        return v === null ? null : JSON.stringify(v);
+      }
+      if (f === 'weather') return v ? String(v).slice(0, 32) : null;
+      return String(v ?? '');
     });
+    const cast = { moods: '::text[]', content: '::jsonb' };
     const cols = fields.join(', ');
-    const params = fields.map((_, i) => `$${i + 2}`).join(', ');
+    const params = fields.map((f, i) => `$${i + 2}${cast[f] || ''}`).join(', ');
     const updates = fields.map((f) => `${f} = EXCLUDED.${f}`).join(', ');
     const { rows } = await pool.query(
       `INSERT INTO entries (day, ${cols}) VALUES ($1, ${params})
        ON CONFLICT (day) DO UPDATE SET ${updates}, updated_at = now()
-       RETURNING day, title, body, mood, weather, updated_at`,
+       RETURNING ${ENTRY_COLS}`,
       [day, ...values]
     );
     res.json(rows[0]);
@@ -277,6 +289,52 @@ apiRouter.patch(
     );
     if (!rows[0]) throw new HttpError(404, 'Introuvable');
     res.json(rows[0]);
+  })
+);
+
+// Correcteur : relais vers LanguageTool (service local, le texte ne quitte pas la machine).
+// Les mots du dictionnaire personnel ne sont jamais signalés.
+apiRouter.post(
+  '/spellcheck',
+  ah(async (req, res) => {
+    if (!SPELLCHECK_URL) throw new HttpError(503, 'Correcteur désactivé');
+    const text = String(req.body?.text ?? '').slice(0, 20000);
+    if (!text.trim()) return res.json({ matches: [] });
+    let response;
+    try {
+      response = await fetch(`${SPELLCHECK_URL}/v2/check`, {
+        method: 'POST',
+        body: new URLSearchParams({ text, language: 'fr', disabledCategories: 'TYPOGRAPHY' }),
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch {
+      throw new HttpError(503, 'Correcteur indisponible');
+    }
+    if (!response.ok) throw new HttpError(503, 'Correcteur indisponible');
+    const data = await response.json();
+    const { rows } = await pool.query('SELECT word FROM dictionary');
+    const dictionary = new Set(rows.map((r) => r.word));
+    const matches = data.matches
+      .map((m) => ({
+        offset: m.offset,
+        length: m.length,
+        message: m.message,
+        word: text.slice(m.offset, m.offset + m.length),
+        replacements: m.replacements.slice(0, 6).map((r) => r.value),
+        type: m.rule?.issueType === 'misspelling' ? 'spelling' : 'grammar',
+      }))
+      .filter((m) => !(m.type === 'spelling' && dictionary.has(m.word.toLowerCase())));
+    res.json({ matches });
+  })
+);
+
+apiRouter.post(
+  '/dictionary',
+  ah(async (req, res) => {
+    const word = String(req.body?.word ?? '').trim().toLowerCase().slice(0, 64);
+    if (!word) throw new HttpError(400, 'Mot vide');
+    await pool.query('INSERT INTO dictionary (word) VALUES ($1) ON CONFLICT DO NOTHING', [word]);
+    res.status(201).json({ word });
   })
 );
 

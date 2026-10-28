@@ -6,7 +6,9 @@ import { Page, TornLabel } from './Decor.jsx';
 import { MOODS } from './DayView.jsx';
 
 const WEEKDAYS = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
-const moodEmoji = (id) => MOODS.find((m) => m.id === id)?.emoji;
+// Emojis des humeurs d'une journée (plusieurs possibles).
+const moodEmojis = (ids = [], max = Infinity) =>
+  ids.map((id) => MOODS.find((m) => m.id === id)?.emoji).filter(Boolean).slice(0, max).join('');
 
 export default function CalendarView({ currentDay, onPickDay }) {
   const [month, setMonth] = useState(() => {
@@ -88,7 +90,7 @@ export default function CalendarView({ currentDay, onPickDay }) {
                     />
                   </svg>
                 )}
-                {moodEmoji(byDay[key]?.mood) && <span className="cal-mood">{moodEmoji(byDay[key].mood)}</span>}
+                {moodEmojis(byDay[key]?.moods, 2) && <span className="cal-mood">{moodEmojis(byDay[key].moods, 2)}</span>}
               </motion.button>
             ) : (
               <span key={`e${i}`} />
@@ -108,7 +110,7 @@ export default function CalendarView({ currentDay, onPickDay }) {
                 {d.cover ? <img src={mediaUrl(d.cover)} alt="" loading="lazy" /> : <span className="month-list-num">{fromKey(d.day).getDate()}</span>}
                 <span className="month-list-text">
                   <strong>
-                    {fromKey(d.day).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })} {moodEmoji(d.mood)}
+                    {fromKey(d.day).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })} {moodEmojis(d.moods)}
                   </strong>
                   <span>{d.title || 'sans titre'}</span>
                   <small>

@@ -35,10 +35,20 @@ services:
       JOURNAL_NAME: ${JOURNAL_NAME:-Mon journal}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Vide = correcteur désactivé (le navigateur garde son correcteur intégré).
+      SPELLCHECK_URL: ${SPELLCHECK_URL-http://languagetool:8010}
     volumes:
       - uploads:/data/uploads
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:3000"
+
+  # Correcteur orthographique et grammatical français, 100 % local (aucun port publié).
+  languagetool:
+    image: erikvl87/languagetool:6.8
+    restart: unless-stopped
+    environment:
+      Java_Xms: 256m
+      Java_Xmx: 1g
 
   # Sauvegarde automatique : base (pg_dump) + images, avec rotation.
   backup:

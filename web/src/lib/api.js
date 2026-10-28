@@ -57,6 +57,9 @@ export const api = {
   saveDrawing: (id, blob) => request('PUT', `/api/media/${id}/drawing`, fileForm(blob, 'dessin.png')),
   updateMedia: (id, patch) => request('PATCH', `/api/media/${id}`, patch),
   deleteMedia: (id) => request('DELETE', `/api/media/${id}`),
+
+  spellcheck: (text) => request('POST', '/api/spellcheck', { text }),
+  addWord: (word) => request('POST', '/api/dictionary', { word }),
 };
 
 export const mediaUrl = (name) => (name ? `/media/${name}` : null);
