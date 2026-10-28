@@ -8,7 +8,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { api } from '../lib/api.js';
 import { Big, Chapter, PageBreak, Spellcheck, buildSpellDecorations, docToText, legacyToDoc, spellKey } from '../editor/extensions.js';
 
-const LINE = 34; // hauteur d'une ligne du carnet (px)
+const LINE = 30; // hauteur d'une ligne du carnet (px), à garder égale au CSS
 const GAP = 48; // espace (invisible) entre deux pages
 const MIN_LINES = 6;
 const HIGHLIGHTS = [
@@ -34,6 +34,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   const [pageCount, setPageCount] = useState(1);
   const [chapters, setChapters] = useState([]);
   const [menu, setMenu] = useState(null);
+  const [tocOpen, setTocOpen] = useState(false);
   const [spellOn, setSpellOn] = useState(true);
   const spell = useRef({ timer: null, ignored: new Set() });
   const layout = useRef({ stride: 0, page: 0 });
@@ -197,6 +198,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   function jumpToChapter(ch) {
     const editor = live();
     if (!editor) return;
+    setTocOpen(false);
     const pos = editor.view.posAtDOM(ch.node, 0);
     showPage(ch.page);
     editor.chain().focus().setTextSelection(pos + ch.node.textContent.length).run();
@@ -287,6 +289,17 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     };
   }, [menu]);
 
+  useEffect(() => {
+    if (!tocOpen) return undefined;
+    const close = (e) => (e.type === 'keydown' ? e.key === 'Escape' && setTocOpen(false) : !e.target.closest?.('.pager-mid') && setTocOpen(false));
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', close);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', close);
+    };
+  }, [tocOpen]);
+
   // ---------- Rendu ----------
 
   const btn = (label, title, active, onClick, className = '') => (
@@ -325,19 +338,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
           <span className="fmt-sep" />
           {btn('+ Chapitre', 'Commencer un nouveau chapitre', false, addChapter, 'fmt-text')}
           {btn('+ Page', 'Passer à une nouvelle page (Ctrl+Entrée)', false, newPage, 'fmt-text')}
-          <span className={`save-status ${status}`}>{STATUS_TEXT[status] || ''}</span>
         </div>
-      )}
-
-      {chapters.length > 0 && (
-        <nav className="chapters" aria-label="Chapitres du jour">
-          {chapters.map((ch, i) => (
-            <button key={i} type="button" className={ch.page === page ? 'current' : ''} onClick={() => jumpToChapter(ch)}>
-              <span className="chapter-num">{i + 1}</span> {ch.title}
-              {ch.time && <small> · {ch.time}</small>}
-            </button>
-          ))}
-        </nav>
       )}
 
       <div
@@ -362,14 +363,39 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
         <button type="button" onClick={() => goTo(page - 1)} disabled={page === 0} aria-label="Page précédente">
           ← précédente
         </button>
-        <span>
-          page {page + 1} / {pageCount}
-          {!spellOn && <small className="spell-off" title="LanguageTool ne répond pas : correcteur du navigateur utilisé"> · correcteur du navigateur</small>}
+        <span className="pager-mid">
+          {page + 1} / {pageCount}
+          {chapters.length > 0 && (
+            <button type="button" className="toc-toggle" aria-expanded={tocOpen} onClick={() => setTocOpen((o) => !o)}>
+              sommaire ({chapters.length})
+            </button>
+          )}
+          {!spellOn && (
+            <small className="spell-off" title="LanguageTool ne répond pas : le correcteur du navigateur est utilisé">
+              ✎?
+            </small>
+          )}
+          {tocOpen && chapters.length > 0 && (
+            <nav className="toc" aria-label="Chapitres du jour">
+              {chapters.map((ch, i) => (
+                <button key={i} type="button" className={ch.page === page ? 'current' : ''} onClick={() => jumpToChapter(ch)}>
+                  <span className="chapter-num">{i + 1}.</span> {ch.title}
+                  <small>
+                    {ch.time ? ` ${ch.time} · ` : ' '}p. {ch.page + 1}
+                  </small>
+                </button>
+              ))}
+            </nav>
+          )}
         </span>
         <button type="button" onClick={() => (page >= pageCount - 1 ? newPage() : goTo(page + 1))} aria-label="Page suivante">
           {page >= pageCount - 1 ? 'nouvelle page +' : 'suivante →'}
         </button>
       </div>
+
+      <span className={`save-status ${status}`} aria-live="polite">
+        {STATUS_TEXT[status] || ''}
+      </span>
 
       {menu && (
         <div className="spell-menu" style={{ left: Math.min(menu.x, window.innerWidth - 260), top: Math.min(menu.y + 8, window.innerHeight - 260) }} role="menu">
