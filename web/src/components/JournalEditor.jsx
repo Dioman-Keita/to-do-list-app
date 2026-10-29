@@ -6,7 +6,17 @@ import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import { api } from '../lib/api.js';
-import { Big, Chapter, PageBreak, Spellcheck, buildSpellDecorations, docToText, legacyToDoc, spellKey } from '../editor/extensions.js';
+import {
+  Big,
+  Chapter,
+  PageBreak,
+  Spellcheck,
+  buildSpellDecorations,
+  docToText,
+  fixColumnHitTesting,
+  legacyToDoc,
+  spellKey,
+} from '../editor/extensions.js';
 
 const LINE = 30; // hauteur d'une ligne du carnet (px), à garder égale au CSS
 const GAP = 48; // espace (invisible) entre deux pages
@@ -64,6 +74,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
       measure();
       scheduleCheck(1200);
     },
+    onCreate: ({ editor: ed }) => fixColumnHitTesting(ed.view),
     onSelectionUpdate: () => followCaret(),
   });
 
@@ -133,8 +144,9 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     showPage(target);
     const rect = el.getBoundingClientRect();
     const hit = editor.view.posAtCoords({ left: rect.left + 60, top: rect.top + 8 });
-    if (hit) editor.chain().focus().setTextSelection(hit.pos).run();
-    else editor.commands.focus();
+    // Ne poser le curseur que s'il tombe bien sur cette page (sinon le carnet le suivrait ailleurs).
+    const onPage = hit && pageOf(editor.view.coordsAtPos(hit.pos).left - (rect.left - el.scrollLeft)) === target;
+    if (onPage) editor.chain().focus().setTextSelection(hit.pos).run();
   }
 
   // Taille d'une page : largeur du cadre, hauteur arrondie à un nombre entier de lignes.
@@ -163,9 +175,13 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   useEffect(() => {
     const el = dom();
     if (!el) return undefined;
+    // On remet seulement la feuille sur la page affichée, sans jamais « suivre le curseur » ici :
+    // au premier clic, le navigateur fait défiler vers l'ANCIEN curseur avant de placer le
+    // nouveau, et suivre ce curseur périmé renvoyait à une page précédente. Tolérance de 1 px :
+    // avec un zoom à 125 % / 150 %, scrollLeft est arrondi (3072,67 au lieu de 3073).
     const snap = () => {
-      if (el.scrollLeft !== layout.current.page * layout.current.stride) followCaret();
-      if (el.scrollLeft !== layout.current.page * layout.current.stride) el.scrollLeft = layout.current.page * layout.current.stride;
+      const want = layout.current.page * layout.current.stride;
+      if (Math.abs(el.scrollLeft - want) > 1) el.scrollLeft = want;
     };
     el.addEventListener('scroll', snap);
     return () => el.removeEventListener('scroll', snap);
@@ -192,7 +208,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     const editor = live();
     if (!editor) return;
     if (!editor.isFocused) editor.commands.focus('end');
-    editor.commands.setHorizontalRule();
+    editor.commands.insertPage();
   }
 
   function jumpToChapter(ch) {

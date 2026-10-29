@@ -19,14 +19,39 @@ export const Chapter = Heading.extend({
 }).configure({ levels: [2] });
 
 // Saut de page : le texte qui suit commence en haut de la page suivante.
-// Reprend la logique d'insertion de HorizontalRule (paragraphe ajouté si besoin).
 export const PageBreak = HorizontalRule.extend({
   name: 'pageBreak',
   parseHTML: () => [{ tag: 'div[data-page-break]' }],
   renderHTML: () => ['div', { 'data-page-break': '', class: 'page-break' }],
   addInputRules: () => [],
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      // Nouvelle page APRÈS le bloc en cours, toujours avec une ligne prête à écrire
+      // (une page faite seulement de sauts n'aurait aucun endroit où poser le curseur).
+      insertPage:
+        () =>
+        ({ state, chain }) => {
+          const { selection, doc } = state;
+          const { $from } = selection;
+          const top = $from.depth > 0 ? $from.index(0) : null;
+          const block = top != null ? doc.child(top) : null;
+          const previous = top > 0 ? doc.child(top - 1) : null;
+          // Déjà sur une page vierge (ligne vide juste après un saut) : on y reste.
+          if (block?.type.name === 'paragraph' && block.content.size === 0 && previous?.type.name === this.name) {
+            return chain().focus().run();
+          }
+          const after = $from.depth > 0 ? $from.after(1) : selection.to;
+          return chain()
+            .insertContentAt(after, [{ type: this.name }, { type: 'paragraph' }])
+            .setTextSelection(after + 2)
+            .focus()
+            .run();
+        },
+    };
+  },
   addKeyboardShortcuts() {
-    return { 'Mod-Enter': () => this.editor.commands.setHorizontalRule() };
+    return { 'Mod-Enter': () => this.editor.commands.insertPage() };
   },
 });
 
@@ -99,6 +124,44 @@ export function buildSpellDecorations(doc, segments, matches) {
     );
   }
   return DecorationSet.create(doc, decorations);
+}
+
+// ---- Clics dans un texte en colonnes ----
+// ProseMirror calcule la position d'un clic avec la boîte englobante des paragraphes.
+// En colonnes, un paragraphe qui continue sur la page suivante a une boîte qui couvre
+// plusieurs pages : un clic sur la page 3 pouvait placer le curseur en page 1 (et le
+// carnet revenait en arrière). Le test de position natif du navigateur, lui, connaît
+// les colonnes : on l'utilise d'abord, et on garde le calcul de ProseMirror en secours.
+export function fixColumnHitTesting(view) {
+  const original = view.posAtCoords.bind(view);
+  view.posAtCoords = (coords) => nativePosAtCoords(view, coords) ?? original(coords);
+}
+
+function nativePosAtCoords(view, { left, top }) {
+  const doc = view.dom.ownerDocument;
+  let node;
+  let offset;
+  if (doc.caretPositionFromPoint) {
+    const caret = doc.caretPositionFromPoint(left, top);
+    if (!caret) return null;
+    ({ offsetNode: node, offset } = caret);
+  } else if (doc.caretRangeFromPoint) {
+    const range = doc.caretRangeFromPoint(left, top);
+    if (!range) return null;
+    ({ startContainer: node, startOffset: offset } = range);
+  } else {
+    return null;
+  }
+  if (!node || !view.dom.contains(node)) return null;
+  let pos;
+  try {
+    pos = view.posAtDOM(node, offset);
+  } catch {
+    return null;
+  }
+  if (pos < 0 || pos > view.state.doc.content.size) return null;
+  const $pos = view.state.doc.resolve(pos);
+  return { pos, inside: $pos.depth > 0 ? $pos.before() : -1 };
 }
 
 // Ancien texte brut (avant les pages) -> document : une ligne = un paragraphe.
