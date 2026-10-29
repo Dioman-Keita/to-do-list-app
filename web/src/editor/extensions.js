@@ -18,6 +18,35 @@ export const Chapter = Heading.extend({
   },
 }).configure({ levels: [2] });
 
+// ---- Pages vierges : une seule à la fois ----
+// Le document est découpé en « morceaux » par les sauts de page. Un morceau qui suit un saut
+// et ne contient que des lignes vides est une page vierge créée à la main.
+export function pageSegments(doc) {
+  const segments = [{ breakPos: null, nodes: [] }];
+  doc.forEach((node, offset) => {
+    if (node.type.name === 'pageBreak') segments.push({ breakPos: offset, nodes: [] });
+    else segments[segments.length - 1].nodes.push({ node, pos: offset });
+  });
+  for (const s of segments) {
+    s.blank = s.breakPos != null && s.nodes.every(({ node }) => node.type.name === 'paragraph' && node.content.size === 0);
+    const last = s.nodes[s.nodes.length - 1];
+    s.end = last ? last.pos + last.node.nodeSize : s.breakPos + 1;
+  }
+  return segments;
+}
+
+export const blankPages = (doc) => pageSegments(doc).filter((s) => s.blank);
+
+// Retire les pages vierges en trop (on garde la dernière). Seules des lignes vides et des
+// sauts de page sont supprimés : jamais de texte. Renvoie null s'il n'y a rien à faire.
+export function dropExtraBlankPages(state) {
+  const blanks = blankPages(state.doc);
+  if (blanks.length <= 1) return null;
+  const tr = state.tr;
+  for (const s of blanks.slice(0, -1).reverse()) tr.delete(s.breakPos, s.end);
+  return tr.setMeta('addToHistory', false);
+}
+
 // Saut de page : le texte qui suit commence en haut de la page suivante.
 export const PageBreak = HorizontalRule.extend({
   name: 'pageBreak',
@@ -27,20 +56,18 @@ export const PageBreak = HorizontalRule.extend({
   addCommands() {
     return {
       ...this.parent?.(),
-      // Nouvelle page APRÈS le bloc en cours, toujours avec une ligne prête à écrire
-      // (une page faite seulement de sauts n'aurait aucun endroit où poser le curseur).
+      // Nouvelle page APRÈS le bloc en cours, toujours avec une ligne prête à écrire.
+      // Une seule page vierge à la fois : s'il y en a déjà une, on y va au lieu d'en créer.
       insertPage:
         () =>
         ({ state, chain }) => {
           const { selection, doc } = state;
-          const { $from } = selection;
-          const top = $from.depth > 0 ? $from.index(0) : null;
-          const block = top != null ? doc.child(top) : null;
-          const previous = top > 0 ? doc.child(top - 1) : null;
-          // Déjà sur une page vierge (ligne vide juste après un saut) : on y reste.
-          if (block?.type.name === 'paragraph' && block.content.size === 0 && previous?.type.name === this.name) {
-            return chain().focus().run();
+          const blank = blankPages(doc)[0];
+          if (blank) {
+            if (blank.nodes.length) return chain().setTextSelection(blank.nodes[0].pos + 1).focus().run();
+            return chain().insertContentAt(blank.end, { type: 'paragraph' }).setTextSelection(blank.end + 1).focus().run();
           }
+          const { $from } = selection;
           const after = $from.depth > 0 ? $from.after(1) : selection.to;
           return chain()
             .insertContentAt(after, [{ type: this.name }, { type: 'paragraph' }])

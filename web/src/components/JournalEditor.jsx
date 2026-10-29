@@ -11,8 +11,10 @@ import {
   Chapter,
   PageBreak,
   Spellcheck,
+  blankPages,
   buildSpellDecorations,
   docToText,
+  dropExtraBlankPages,
   fixColumnHitTesting,
   legacyToDoc,
   spellKey,
@@ -74,7 +76,12 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
       measure();
       scheduleCheck(1200);
     },
-    onCreate: ({ editor: ed }) => fixColumnHitTesting(ed.view),
+    onCreate: ({ editor: ed }) => {
+      fixColumnHitTesting(ed.view);
+      // Journées écrites avant la limite : on ne garde qu'une page vierge.
+      const cleanup = dropExtraBlankPages(ed.state);
+      if (cleanup) ed.view.dispatch(cleanup);
+    },
     onSelectionUpdate: () => followCaret(),
   });
 
@@ -318,9 +325,17 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
 
   // ---------- Rendu ----------
 
-  const btn = (label, title, active, onClick, className = '') => (
+  // Une seule page vierge : sur elle, plus de bouton « nouvelle page » (la suivante
+  // se créera toute seule quand celle-ci sera pleine).
+  const blank = editor ? blankPages(editor.state.doc)[0] : null;
+  const onBlankPage = !!blank && editor.state.selection.from >= blank.breakPos && editor.state.selection.from <= blank.end;
+  const lastIsBlank = !!blank && blank.end === editor.state.doc.content.size;
+  const BLANK_HINT = 'Écris d’abord sur la page vierge : la suivante se créera toute seule';
+
+  const btn = (label, title, active, onClick, className = '', disabled = false) => (
     <button
       type="button"
+      disabled={disabled}
       className={`fmt ${active ? 'active' : ''} ${className}`}
       title={title}
       aria-label={title}
@@ -353,7 +368,14 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
           )}
           <span className="fmt-sep" />
           {btn('+ Chapitre', 'Commencer un nouveau chapitre', false, addChapter, 'fmt-text')}
-          {btn('+ Page', 'Passer à une nouvelle page (Ctrl+Entrée)', false, newPage, 'fmt-text')}
+          {btn(
+            '+ Page',
+            onBlankPage ? BLANK_HINT : blank ? 'Aller à la page vierge (Ctrl+Entrée)' : 'Passer à une nouvelle page (Ctrl+Entrée)',
+            false,
+            newPage,
+            'fmt-text',
+            onBlankPage
+          )}
         </div>
       )}
 
@@ -404,7 +426,13 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
             </nav>
           )}
         </span>
-        <button type="button" onClick={() => (page >= pageCount - 1 ? newPage() : goTo(page + 1))} aria-label="Page suivante">
+        <button
+          type="button"
+          onClick={() => (page >= pageCount - 1 ? newPage() : goTo(page + 1))}
+          disabled={page >= pageCount - 1 && lastIsBlank}
+          title={page >= pageCount - 1 && lastIsBlank ? BLANK_HINT : undefined}
+          aria-label="Page suivante"
+        >
           {page >= pageCount - 1 ? 'nouvelle page +' : 'suivante →'}
         </button>
       </div>
