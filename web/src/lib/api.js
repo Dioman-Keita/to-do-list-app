@@ -58,6 +58,9 @@ export const api = {
   updateMedia: (id, patch) => request('PATCH', `/api/media/${id}`, patch),
   deleteMedia: (id) => request('DELETE', `/api/media/${id}`),
 
+  getSettings: () => request('GET', '/api/settings'),
+  saveSettings: (settings) => request('PUT', '/api/settings', settings),
+
   spellcheck: (text) => request('POST', '/api/spellcheck', { text }),
   addWord: (word) => request('POST', '/api/dictionary', { word }),
 };

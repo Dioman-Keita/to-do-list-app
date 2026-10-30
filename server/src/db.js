@@ -57,6 +57,17 @@ const MIGRATIONS = [
      word text PRIMARY KEY,
      created_at timestamptz NOT NULL DEFAULT now()
    );`,
+
+  // Personnalisation (prénom, titre, couverture). Un journal déjà utilisé est considéré
+  // comme configuré : la première configuration ne s'affiche que sur une installation neuve.
+  `CREATE TABLE settings (
+     key text PRIMARY KEY,
+     value jsonb NOT NULL,
+     updated_at timestamptz NOT NULL DEFAULT now()
+   );
+   INSERT INTO settings (key, value)
+     SELECT 'setup_done', 'true'::jsonb
+     WHERE EXISTS (SELECT 1 FROM entries) OR EXISTS (SELECT 1 FROM tasks) OR EXISTS (SELECT 1 FROM media);`,
 ];
 
 async function waitForDatabase() {

@@ -164,7 +164,8 @@ button:disabled {
   z-index: 2;
   padding: 9px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #3a4a63, #263246);
+  /* Couleur de couverture choisie (Paramètres), légèrement assombrie pour la tranche. */
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cover-a, #47597a) 80%, #000), color-mix(in srgb, var(--cover-b, #2d3a52) 85%, #000));
   box-shadow: var(--shadow), 0 2px 0 rgba(255, 255, 255, 0.08) inset;
 }
 
@@ -1151,7 +1152,7 @@ li.done .task-text {
   background:
     radial-gradient(ellipse at 25% 20%, rgba(239, 111, 166, 0.35), transparent 45%),
     radial-gradient(ellipse at 80% 75%, rgba(95, 191, 230, 0.4), transparent 50%),
-    linear-gradient(135deg, #47597a, #2d3a52) ;
+    linear-gradient(135deg, var(--cover-a, #47597a), var(--cover-b, #2d3a52));
   box-shadow: var(--shadow), inset 14px 0 0 rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
@@ -1625,6 +1626,191 @@ li.done .task-text {
   .page-turn {
     display: none;
   }
+}
+
+/* ---------- Première configuration et Paramètres ---------- */
+.intro-lines {
+  margin: 4px 0 18px;
+}
+
+.intro-lines p {
+  margin: 0;
+  font-size: 23px;
+  line-height: 34px;
+  border-bottom: 1px solid var(--line);
+}
+
+.identity-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.identity-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.identity-field span {
+  font-size: 18px;
+  color: var(--ink-soft);
+}
+
+.identity-field input {
+  border: 0;
+  border-bottom: 2px solid var(--ink);
+  background: rgba(250, 245, 232, 0.6);
+  font-family: var(--font-title);
+  font-size: 28px;
+  padding: 4px 8px;
+}
+
+.identity-field input:focus {
+  outline: none;
+  border-bottom-color: var(--pink);
+}
+
+.identity-hint {
+  margin: 14px 0 0;
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
+.identity-hint code {
+  font-family: inherit;
+  background: rgba(246, 223, 79, 0.45);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.cover-mini {
+  position: relative;
+  width: min(260px, 70%);
+  aspect-ratio: 3 / 4;
+  margin: 10px auto 22px;
+  border-radius: 6px 10px 10px 6px;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35), inset 10px 0 0 rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.cover-mini::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--noise);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.cover-mini .cover-sticker-1 {
+  width: 44px;
+  height: 44px;
+  left: 18px;
+  bottom: 18px;
+}
+
+.cover-mini .cover-sticker-2 {
+  width: 26px;
+  height: 26px;
+  left: 56px;
+  bottom: 52px;
+}
+
+.cover-mini-star {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+}
+
+.cover-mini-title {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  width: 84%;
+  transform: translateX(-50%) rotate(-3deg);
+  z-index: 2;
+}
+
+.cover-mini-title strong {
+  display: block;
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.cover-mini-title small {
+  display: block;
+  color: #c43d78;
+  font-size: 14px;
+}
+
+.cover-chooser {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.cover-swatch {
+  position: relative;
+  width: 46px;
+  height: 58px;
+  border: 0;
+  border-radius: 3px 6px 6px 3px;
+  box-shadow: 2px 3px 0 rgba(51, 48, 43, 0.5), inset 5px 0 0 rgba(0, 0, 0, 0.18);
+  padding: 0;
+}
+
+.cover-swatch span {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink-soft);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.cover-swatch:hover span,
+.cover-swatch.active span {
+  opacity: 1;
+}
+
+.cover-swatch.active {
+  outline: 2px dashed var(--ink);
+  outline-offset: 4px;
+}
+
+.open-journal,
+.settings-actions {
+  display: flex;
+  margin: 22px auto 0;
+}
+
+.open-journal {
+  font-size: 22px;
+  padding: 6px 20px;
+}
+
+.settings-actions {
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-saved {
+  color: var(--ink-soft);
+}
+
+.onboarding .identity-hint {
+  text-align: center;
 }
 
 /* ---------- Petits écrans : une page sous l'autre ---------- */

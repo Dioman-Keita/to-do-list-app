@@ -29,6 +29,14 @@ export const IconPencil = () => (
   </Doodle>
 );
 
+export const IconGear = () => (
+  <Doodle>
+    <circle cx="20" cy="20" r="5" />
+    <path d="M20 5v5M20 30v5M5 20h5M30 20h5M9.5 9.5l3.5 3.5M27 27l3.5 3.5M9.5 30.5l3.5-3.5M27 13l3.5-3.5" />
+    <circle cx="20" cy="20" r="10" />
+  </Doodle>
+);
+
 export const IconCalendar = () => (
   <Doodle>
     <rect x="6" y="9" width="28" height="25" rx="2" />

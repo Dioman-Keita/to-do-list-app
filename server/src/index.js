@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { isAuthed, login, logout, requireAuth } from './auth.js';
 import { migrate, pool } from './db.js';
-import { apiRouter, errorHandler, serveMedia } from './routes.js';
+import { apiRouter, errorHandler, readSettings, serveMedia } from './routes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -22,8 +22,21 @@ app.get('/healthz', async (req, res) => {
   }
 });
 
-app.get('/api/me', (req, res) => {
-  res.json({ authed: isAuthed(req), name: process.env.JOURNAL_NAME || 'Mon journal' });
+// Public : le titre et la couverture s'affichent sur l'écran de connexion.
+// Le prénom et l'état de la première configuration ne sont donnés qu'une fois connecté.
+app.get('/api/me', async (req, res, next) => {
+  try {
+    const s = await readSettings();
+    const authed = isAuthed(req);
+    res.json({
+      authed,
+      name: s.title || process.env.JOURNAL_NAME || 'Mon journal',
+      cover: s.cover,
+      ...(authed && { ownerName: s.ownerName, needsSetup: !s.setupDone }),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 app.post('/api/login', login);
 app.post('/api/logout', logout);
