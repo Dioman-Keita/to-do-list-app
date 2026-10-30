@@ -130,15 +130,21 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     const el = dom();
     if (!el || !layout.current.stride) return;
     const { head } = editor.state.selection;
-    let coords;
-    try {
-      coords = editor.view.coordsAtPos(head);
-    } catch {
-      return;
+    const base = el.getBoundingClientRect().left - el.scrollLeft;
+    // À la frontière de deux pages (juste après la dernière lettre d'une page = juste avant
+    // la première de la suivante), le curseur appartient aux deux : le navigateur peut le
+    // situer en fin de page précédente. On ne tourne la page que si le curseur ne peut pas
+    // être sur la page affichée ; sinon, on va du côté « après » (celui où l'on écrit).
+    const pages = [];
+    for (const side of [-1, 1]) {
+      try {
+        pages.push(pageOf(editor.view.coordsAtPos(head, side).left - base));
+      } catch {
+        /* position sans rendu (ex. entre deux blocs) */
+      }
     }
-    const x = coords.left - (el.getBoundingClientRect().left - el.scrollLeft);
-    const p = pageOf(x);
-    if (p !== layout.current.page) showPage(p);
+    if (!pages.length || pages.includes(layout.current.page)) return;
+    showPage(pages[pages.length - 1]);
   }
 
   // Aller à une page et y placer le curseur (en haut de la page).
@@ -211,10 +217,13 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     }
   }
 
-  function newPage() {
+  // `atEnd` : bouton « nouvelle page + » du bas, affiché sur la dernière page -> à la fin.
+  // Sinon (barre d'outils, Ctrl+Entrée) : après le bloc où se trouve le curseur.
+  function newPage(atEnd) {
     const editor = live();
     if (!editor) return;
-    if (!editor.isFocused) editor.commands.focus('end');
+    if (atEnd) editor.commands.focus('end');
+    else if (!editor.isFocused) editor.commands.focus();
     editor.commands.insertPage();
   }
 
@@ -372,7 +381,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
             '+ Page',
             onBlankPage ? BLANK_HINT : blank ? 'Aller à la page vierge (Ctrl+Entrée)' : 'Passer à une nouvelle page (Ctrl+Entrée)',
             false,
-            newPage,
+            () => newPage(false),
             'fmt-text',
             onBlankPage
           )}
@@ -428,7 +437,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
         </span>
         <button
           type="button"
-          onClick={() => (page >= pageCount - 1 ? newPage() : goTo(page + 1))}
+          onClick={() => (page >= pageCount - 1 ? newPage(true) : goTo(page + 1))}
           disabled={page >= pageCount - 1 && lastIsBlank}
           title={page >= pageCount - 1 && lastIsBlank ? BLANK_HINT : undefined}
           aria-label="Page suivante"

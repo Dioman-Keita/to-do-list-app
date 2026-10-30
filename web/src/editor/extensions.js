@@ -19,8 +19,8 @@ export const Chapter = Heading.extend({
 }).configure({ levels: [2] });
 
 // ---- Pages vierges : une seule à la fois ----
-// Le document est découpé en « morceaux » par les sauts de page. Un morceau qui suit un saut
-// et ne contient que des lignes vides est une page vierge créée à la main.
+// Le document est découpé en « morceaux » par les sauts de page. Un morceau qui ne contient
+// que des lignes vides est une page vierge (y compris la première page d'une journée neuve).
 export function pageSegments(doc) {
   const segments = [{ breakPos: null, nodes: [] }];
   doc.forEach((node, offset) => {
@@ -28,22 +28,24 @@ export function pageSegments(doc) {
     else segments[segments.length - 1].nodes.push({ node, pos: offset });
   });
   for (const s of segments) {
-    s.blank = s.breakPos != null && s.nodes.every(({ node }) => node.type.name === 'paragraph' && node.content.size === 0);
+    s.blank = s.nodes.every(({ node }) => node.type.name === 'paragraph' && node.content.size === 0);
     const last = s.nodes[s.nodes.length - 1];
-    s.end = last ? last.pos + last.node.nodeSize : s.breakPos + 1;
+    s.end = last ? last.pos + last.node.nodeSize : s.breakPos != null ? s.breakPos + 1 : 0;
   }
   return segments;
 }
 
 export const blankPages = (doc) => pageSegments(doc).filter((s) => s.blank);
 
-// Retire les pages vierges en trop (on garde la dernière). Seules des lignes vides et des
-// sauts de page sont supprimés : jamais de texte. Renvoie null s'il n'y a rien à faire.
+// Retire les pages vierges en trop. On garde la première page si elle est vierge (elle n'a
+// pas de saut de page à retirer), sinon la dernière page vierge. Seules des lignes vides et
+// des sauts de page sont supprimés : jamais de texte. Renvoie null s'il n'y a rien à faire.
 export function dropExtraBlankPages(state) {
   const blanks = blankPages(state.doc);
   if (blanks.length <= 1) return null;
+  const keep = blanks[0].breakPos == null ? blanks[0] : blanks[blanks.length - 1];
   const tr = state.tr;
-  for (const s of blanks.slice(0, -1).reverse()) tr.delete(s.breakPos, s.end);
+  for (const s of blanks.filter((b) => b !== keep).reverse()) tr.delete(s.breakPos, s.end);
   return tr.setMeta('addToHistory', false);
 }
 
