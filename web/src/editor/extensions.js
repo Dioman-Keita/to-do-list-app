@@ -18,15 +18,69 @@ export const Chapter = Heading.extend({
   },
 }).configure({ levels: [2] });
 
+// ---- Pages vierges : une seule à la fois ----
+// Le document est découpé en « morceaux » par les sauts de page. Un morceau qui ne contient
+// que des lignes vides est une page vierge (y compris la première page d'une journée neuve).
+export function pageSegments(doc) {
+  const segments = [{ breakPos: null, nodes: [] }];
+  doc.forEach((node, offset) => {
+    if (node.type.name === 'pageBreak') segments.push({ breakPos: offset, nodes: [] });
+    else segments[segments.length - 1].nodes.push({ node, pos: offset });
+  });
+  for (const s of segments) {
+    s.blank = s.nodes.every(({ node }) => node.type.name === 'paragraph' && node.content.size === 0);
+    const last = s.nodes[s.nodes.length - 1];
+    s.end = last ? last.pos + last.node.nodeSize : s.breakPos != null ? s.breakPos + 1 : 0;
+  }
+  return segments;
+}
+
+export const blankPages = (doc) => pageSegments(doc).filter((s) => s.blank);
+
+// Retire les pages vierges en trop. On garde la première page si elle est vierge (elle n'a
+// pas de saut de page à retirer), sinon la dernière page vierge. Seules des lignes vides et
+// des sauts de page sont supprimés : jamais de texte. Renvoie null s'il n'y a rien à faire.
+export function dropExtraBlankPages(state) {
+  const blanks = blankPages(state.doc);
+  if (blanks.length <= 1) return null;
+  const keep = blanks[0].breakPos == null ? blanks[0] : blanks[blanks.length - 1];
+  const tr = state.tr;
+  for (const s of blanks.filter((b) => b !== keep).reverse()) tr.delete(s.breakPos, s.end);
+  return tr.setMeta('addToHistory', false);
+}
+
 // Saut de page : le texte qui suit commence en haut de la page suivante.
-// Reprend la logique d'insertion de HorizontalRule (paragraphe ajouté si besoin).
 export const PageBreak = HorizontalRule.extend({
   name: 'pageBreak',
   parseHTML: () => [{ tag: 'div[data-page-break]' }],
   renderHTML: () => ['div', { 'data-page-break': '', class: 'page-break' }],
   addInputRules: () => [],
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      // Nouvelle page APRÈS le bloc en cours, toujours avec une ligne prête à écrire.
+      // Une seule page vierge à la fois : s'il y en a déjà une, on y va au lieu d'en créer.
+      insertPage:
+        () =>
+        ({ state, chain }) => {
+          const { selection, doc } = state;
+          const blank = blankPages(doc)[0];
+          if (blank) {
+            if (blank.nodes.length) return chain().setTextSelection(blank.nodes[0].pos + 1).focus().run();
+            return chain().insertContentAt(blank.end, { type: 'paragraph' }).setTextSelection(blank.end + 1).focus().run();
+          }
+          const { $from } = selection;
+          const after = $from.depth > 0 ? $from.after(1) : selection.to;
+          return chain()
+            .insertContentAt(after, [{ type: this.name }, { type: 'paragraph' }])
+            .setTextSelection(after + 2)
+            .focus()
+            .run();
+        },
+    };
+  },
   addKeyboardShortcuts() {
-    return { 'Mod-Enter': () => this.editor.commands.setHorizontalRule() };
+    return { 'Mod-Enter': () => this.editor.commands.insertPage() };
   },
 });
 
@@ -99,6 +153,44 @@ export function buildSpellDecorations(doc, segments, matches) {
     );
   }
   return DecorationSet.create(doc, decorations);
+}
+
+// ---- Clics dans un texte en colonnes ----
+// ProseMirror calcule la position d'un clic avec la boîte englobante des paragraphes.
+// En colonnes, un paragraphe qui continue sur la page suivante a une boîte qui couvre
+// plusieurs pages : un clic sur la page 3 pouvait placer le curseur en page 1 (et le
+// carnet revenait en arrière). Le test de position natif du navigateur, lui, connaît
+// les colonnes : on l'utilise d'abord, et on garde le calcul de ProseMirror en secours.
+export function fixColumnHitTesting(view) {
+  const original = view.posAtCoords.bind(view);
+  view.posAtCoords = (coords) => nativePosAtCoords(view, coords) ?? original(coords);
+}
+
+function nativePosAtCoords(view, { left, top }) {
+  const doc = view.dom.ownerDocument;
+  let node;
+  let offset;
+  if (doc.caretPositionFromPoint) {
+    const caret = doc.caretPositionFromPoint(left, top);
+    if (!caret) return null;
+    ({ offsetNode: node, offset } = caret);
+  } else if (doc.caretRangeFromPoint) {
+    const range = doc.caretRangeFromPoint(left, top);
+    if (!range) return null;
+    ({ startContainer: node, startOffset: offset } = range);
+  } else {
+    return null;
+  }
+  if (!node || !view.dom.contains(node)) return null;
+  let pos;
+  try {
+    pos = view.posAtDOM(node, offset);
+  } catch {
+    return null;
+  }
+  if (pos < 0 || pos > view.state.doc.content.size) return null;
+  const $pos = view.state.doc.resolve(pos);
+  return { pos, inside: $pos.depth > 0 ? $pos.before() : -1 };
 }
 
 // Ancien texte brut (avant les pages) -> document : une ligne = un paragraphe.

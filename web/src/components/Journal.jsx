@@ -62,7 +62,9 @@ export default function Journal({ name, onLogout }) {
   useEffect(() => {
     const onKey = (e) => {
       if (tab !== 'jour' || viewer || editor) return;
-      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      // Jamais pendant l'écriture : le carnet (contenteditable) n'est ni un INPUT ni un TEXTAREA.
+      const active = document.activeElement;
+      if (['INPUT', 'TEXTAREA'].includes(active?.tagName) || active?.isContentEditable) return;
       if (e.key === 'ArrowLeft') go('jour', addDays(day, -1));
       if (e.key === 'ArrowRight') go('jour', addDays(day, 1));
     };

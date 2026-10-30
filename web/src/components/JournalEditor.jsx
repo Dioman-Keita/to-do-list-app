@@ -6,7 +6,19 @@ import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import { api } from '../lib/api.js';
-import { Big, Chapter, PageBreak, Spellcheck, buildSpellDecorations, docToText, legacyToDoc, spellKey } from '../editor/extensions.js';
+import {
+  Big,
+  Chapter,
+  PageBreak,
+  Spellcheck,
+  blankPages,
+  buildSpellDecorations,
+  docToText,
+  dropExtraBlankPages,
+  fixColumnHitTesting,
+  legacyToDoc,
+  spellKey,
+} from '../editor/extensions.js';
 
 const LINE = 30; // hauteur d'une ligne du carnet (px), à garder égale au CSS
 const GAP = 48; // espace (invisible) entre deux pages
@@ -64,6 +76,12 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
       measure();
       scheduleCheck(1200);
     },
+    onCreate: ({ editor: ed }) => {
+      fixColumnHitTesting(ed.view);
+      // Journées écrites avant la limite : on ne garde qu'une page vierge.
+      const cleanup = dropExtraBlankPages(ed.state);
+      if (cleanup) ed.view.dispatch(cleanup);
+    },
     onSelectionUpdate: () => followCaret(),
   });
 
@@ -112,15 +130,21 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     const el = dom();
     if (!el || !layout.current.stride) return;
     const { head } = editor.state.selection;
-    let coords;
-    try {
-      coords = editor.view.coordsAtPos(head);
-    } catch {
-      return;
+    const base = el.getBoundingClientRect().left - el.scrollLeft;
+    // À la frontière de deux pages (juste après la dernière lettre d'une page = juste avant
+    // la première de la suivante), le curseur appartient aux deux : le navigateur peut le
+    // situer en fin de page précédente. On ne tourne la page que si le curseur ne peut pas
+    // être sur la page affichée ; sinon, on va du côté « après » (celui où l'on écrit).
+    const pages = [];
+    for (const side of [-1, 1]) {
+      try {
+        pages.push(pageOf(editor.view.coordsAtPos(head, side).left - base));
+      } catch {
+        /* position sans rendu (ex. entre deux blocs) */
+      }
     }
-    const x = coords.left - (el.getBoundingClientRect().left - el.scrollLeft);
-    const p = pageOf(x);
-    if (p !== layout.current.page) showPage(p);
+    if (!pages.length || pages.includes(layout.current.page)) return;
+    showPage(pages[pages.length - 1]);
   }
 
   // Aller à une page et y placer le curseur (en haut de la page).
@@ -133,8 +157,9 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     showPage(target);
     const rect = el.getBoundingClientRect();
     const hit = editor.view.posAtCoords({ left: rect.left + 60, top: rect.top + 8 });
-    if (hit) editor.chain().focus().setTextSelection(hit.pos).run();
-    else editor.commands.focus();
+    // Ne poser le curseur que s'il tombe bien sur cette page (sinon le carnet le suivrait ailleurs).
+    const onPage = hit && pageOf(editor.view.coordsAtPos(hit.pos).left - (rect.left - el.scrollLeft)) === target;
+    if (onPage) editor.chain().focus().setTextSelection(hit.pos).run();
   }
 
   // Taille d'une page : largeur du cadre, hauteur arrondie à un nombre entier de lignes.
@@ -163,9 +188,13 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   useEffect(() => {
     const el = dom();
     if (!el) return undefined;
+    // On remet seulement la feuille sur la page affichée, sans jamais « suivre le curseur » ici :
+    // au premier clic, le navigateur fait défiler vers l'ANCIEN curseur avant de placer le
+    // nouveau, et suivre ce curseur périmé renvoyait à une page précédente. Tolérance de 1 px :
+    // avec un zoom à 125 % / 150 %, scrollLeft est arrondi (3072,67 au lieu de 3073).
     const snap = () => {
-      if (el.scrollLeft !== layout.current.page * layout.current.stride) followCaret();
-      if (el.scrollLeft !== layout.current.page * layout.current.stride) el.scrollLeft = layout.current.page * layout.current.stride;
+      const want = layout.current.page * layout.current.stride;
+      if (Math.abs(el.scrollLeft - want) > 1) el.scrollLeft = want;
     };
     el.addEventListener('scroll', snap);
     return () => el.removeEventListener('scroll', snap);
@@ -188,11 +217,14 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     }
   }
 
-  function newPage() {
+  // `atEnd` : bouton « nouvelle page + » du bas, affiché sur la dernière page -> à la fin.
+  // Sinon (barre d'outils, Ctrl+Entrée) : après le bloc où se trouve le curseur.
+  function newPage(atEnd) {
     const editor = live();
     if (!editor) return;
-    if (!editor.isFocused) editor.commands.focus('end');
-    editor.commands.setHorizontalRule();
+    if (atEnd) editor.commands.focus('end');
+    else if (!editor.isFocused) editor.commands.focus();
+    editor.commands.insertPage();
   }
 
   function jumpToChapter(ch) {
@@ -302,9 +334,17 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
 
   // ---------- Rendu ----------
 
-  const btn = (label, title, active, onClick, className = '') => (
+  // Une seule page vierge : sur elle, plus de bouton « nouvelle page » (la suivante
+  // se créera toute seule quand celle-ci sera pleine).
+  const blank = editor ? blankPages(editor.state.doc)[0] : null;
+  const onBlankPage = !!blank && editor.state.selection.from >= blank.breakPos && editor.state.selection.from <= blank.end;
+  const lastIsBlank = !!blank && blank.end === editor.state.doc.content.size;
+  const BLANK_HINT = 'Écris d’abord sur la page vierge : la suivante se créera toute seule';
+
+  const btn = (label, title, active, onClick, className = '', disabled = false) => (
     <button
       type="button"
+      disabled={disabled}
       className={`fmt ${active ? 'active' : ''} ${className}`}
       title={title}
       aria-label={title}
@@ -337,7 +377,14 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
           )}
           <span className="fmt-sep" />
           {btn('+ Chapitre', 'Commencer un nouveau chapitre', false, addChapter, 'fmt-text')}
-          {btn('+ Page', 'Passer à une nouvelle page (Ctrl+Entrée)', false, newPage, 'fmt-text')}
+          {btn(
+            '+ Page',
+            onBlankPage ? BLANK_HINT : blank ? 'Aller à la page vierge (Ctrl+Entrée)' : 'Passer à une nouvelle page (Ctrl+Entrée)',
+            false,
+            () => newPage(false),
+            'fmt-text',
+            onBlankPage
+          )}
         </div>
       )}
 
@@ -388,7 +435,13 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
             </nav>
           )}
         </span>
-        <button type="button" onClick={() => (page >= pageCount - 1 ? newPage() : goTo(page + 1))} aria-label="Page suivante">
+        <button
+          type="button"
+          onClick={() => (page >= pageCount - 1 ? newPage(true) : goTo(page + 1))}
+          disabled={page >= pageCount - 1 && lastIsBlank}
+          title={page >= pageCount - 1 && lastIsBlank ? BLANK_HINT : undefined}
+          aria-label="Page suivante"
+        >
           {page >= pageCount - 1 ? 'nouvelle page +' : 'suivante →'}
         </button>
       </div>
