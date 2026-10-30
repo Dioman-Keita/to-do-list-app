@@ -1,0 +1,44 @@
+{
+  "name": "journal-desktop",
+  "productName": "Journal",
+  "version": "1.0.0",
+  "description": "Le journal aquarelle dans sa propre fenêtre Windows",
+  "author": "Dioman Keita",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node build/make-icon.mjs",
+    "dist": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "app.journal.desktop",
+    "productName": "Journal",
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "renderer/**/*",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Journal"
+    }
+  }
+}

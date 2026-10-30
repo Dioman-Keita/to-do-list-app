@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; script-src 'self'" />
+    <title>Journal</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <div class="drag-bar"></div>
+    <main class="card">
+      <span class="tape"></span>
+      <svg class="star" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M32 5l8 16.4 18 2.6-13 12.7 3 17.9L32 46.1 16 54.6l3-17.9L6 24l18-2.6z" />
+      </svg>
+      <div class="torn"><h1>Mon journal</h1><p>version bureau</p></div>
+
+      <section id="waiting" hidden>
+        <div class="butterfly" aria-hidden="true"><span></span><span></span></div>
+        <p id="status" role="status">Je cherche ton journal…</p>
+        <div class="actions" id="waiting-actions" hidden>
+          <button type="button" id="retry" class="sticker">Réessayer</button>
+          <button type="button" id="edit" class="link">Modifier la connexion</button>
+        </div>
+      </section>
+
+      <form id="form" hidden>
+        <p class="intro">Où se trouve ton journal&nbsp;?</p>
+        <label class="field">
+          <span>Adresse du journal</span>
+          <input id="url" type="url" required placeholder="http://localhost:8080" spellcheck="false" />
+          <small>Sur ce PC : <code>http://localhost:8080</code>. Sur un VPS : <code>https://journal.mondomaine.fr</code></small>
+        </label>
+        <label class="check">
+          <input id="local" type="checkbox" />
+          <span>Le journal tourne sur ce PC avec Docker : le démarrer tout seul s’il dort</span>
+        </label>
+        <div id="local-box" class="field" hidden>
+          <span>Dossier du journal (celui qui contient <code>docker-compose.yml</code>)</span>
+          <div class="folder">
+            <input id="dir" readonly placeholder="aucun dossier choisi" />
+            <button type="button" id="pick" class="link">Choisir…</button>
+          </div>
+        </div>
+        <label class="check" id="autostart-box">
+          <input id="autostart" type="checkbox" />
+          <span>Ouvrir le journal au démarrage de Windows</span>
+        </label>
+        <p id="form-status" role="status"></p>
+        <div class="actions">
+          <button type="button" id="test" class="link">Tester</button>
+          <button type="submit" class="sticker">Ouvrir mon journal →</button>
+        </div>
+      </form>
+    </main>
+    <script src="setup.js"></script>
+  </body>
+</html>

@@ -166,6 +166,29 @@ Les polices manuscrites sont définies en haut de [`web/src/styles.css`](web/src
    ```
 3. Mets `'MaPolice'` en premier dans `--font-hand` / `--font-title`, puis reconstruis : `docker compose up -d --build app`.
 
+## 🖥️ Application de bureau (Windows)
+
+Le dossier [`desktop/`](desktop/) contient une application Electron : le journal dans sa propre
+fenêtre (sans barre de navigateur), qui se connecte au serveur — ce PC avec Docker, ou un VPS.
+Les données, les sauvegardes et le correcteur restent côté serveur.
+
+- **Premier lancement** : adresse du journal (`http://localhost:8080` sur ce PC), test de connexion.
+- **Journal sur ce PC** : en indiquant le dossier du projet, l'application réveille Docker Desktop et
+  lance `docker compose up -d` si le journal dort.
+- Option « ouvrir au démarrage de Windows », fenêtre et taille mémorisées, une seule instance.
+- Sécurité : seul le journal s'affiche dans la fenêtre ; les liens externes s'ouvrent dans le navigateur ;
+  aucune permission (caméra, micro…) accordée.
+- Journal de fonctionnement : `%APPDATA%\Journal\journal-desktop.log`.
+
+Construire l'installateur :
+
+```bash
+cd desktop && npm install && node node_modules/electron/install.js && npm run dist
+```
+
+L'installateur (`desktop/dist/Journal Setup x.y.z.exe`) n'est pas signé : Windows SmartScreen affiche
+« Windows a protégé votre ordinateur » → « Informations complémentaires » → « Exécuter quand même ».
+
 ## 🛠️ Développement
 
 ```bash
