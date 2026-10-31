@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { api } from '../lib/api.js';
 import { Star } from './Decor.jsx';
 
-const MIN_LENGTH = 8;
+const MIN_LENGTH = 4;
 
 // Tout premier lancement : choisir le mot de passe secret du journal.
 // Si le journal est joignable depuis d'autres machines, le serveur exige aussi le code

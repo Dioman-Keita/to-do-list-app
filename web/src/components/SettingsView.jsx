@@ -37,7 +37,7 @@ function PasswordChange() {
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const mismatch = confirm.length > 0 && next !== confirm;
-  const ready = current && next.length >= 8 && next === confirm;
+  const ready = current && next.length >= 4 && next === confirm;
 
   async function submit(e) {
     e.preventDefault();
@@ -74,7 +74,7 @@ function PasswordChange() {
         <input type="password" autoComplete="current-password" autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} />
       </label>
       <label className="identity-field">
-        <span>Le nouveau (au moins 8 caractères)</span>
+        <span>Le nouveau (au moins 4 caractères)</span>
         <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
       </label>
       <label className="identity-field">

@@ -11,7 +11,7 @@ import { pool } from './db.js';
 const SECURE_COOKIE = process.env.COOKIE_SECURE === 'true';
 const COOKIE = 'journal_session';
 const MAX_AGE_S = 30 * 24 * 3600;
-const MIN_LENGTH = 8;
+const MIN_LENGTH = 4;
 const scrypt = promisify(crypto.scrypt);
 const SCRYPT = { N: 16384, r: 8, p: 1 };
 
