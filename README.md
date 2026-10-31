@@ -256,7 +256,9 @@ server/        API Express (auth, journées, tâches, médias, migrations)
 web/           Front React (carnet, éditeur de dessin, albums, calendrier)
 backup/        Scripts de sauvegarde / restauration
 legacy/        Ancienne to-do list en JavaScript vanilla
+desktop/       Application de bureau Electron (fenêtre, écran de connexion, installateur)
 docs/          Captures d'écran et direction artistique (docs/design/)
+.github/       Intégration continue (installateur Windows, publication des versions)
 AGENTS.md      Guide pour les agents IA (CLAUDE.md l'importe)
 Dockerfile     Image unique : build du front + serveur Node
 docker-compose.yml
