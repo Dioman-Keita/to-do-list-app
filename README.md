@@ -52,7 +52,8 @@ maintenant dans la liste « À faire » de chaque journée.
 | Données | PostgreSQL 17 (texte, tâches, métadonnées) + volume Docker pour les images |
 | Éditeur | TipTap (ProseMirror), pages en colonnes CSS |
 | Correcteur | LanguageTool 6.8 (conteneur local, ~1 Go de RAM) |
-| Ops | Docker Compose, conteneur de sauvegarde automatique, Caddy (HTTPS) en option |
+| Bureau | Electron 44 (fenêtre Windows connectée au serveur), installateur NSIS via electron-builder |
+| Ops | Docker Compose, conteneur de sauvegarde automatique, Caddy (HTTPS) en option, GitHub Actions |
 
 ## 🚀 Lancer sur ton PC
 
@@ -180,14 +181,51 @@ Les données, les sauvegardes et le correcteur restent côté serveur.
   aucune permission (caméra, micro…) accordée.
 - Journal de fonctionnement : `%APPDATA%\Journal\journal-desktop.log`.
 
-Construire l'installateur :
+### Installer
+
+Télécharge `Journal Setup x.y.z.exe` depuis les
+[Releases GitHub](https://github.com/Dioman-Keita/to-do-list-app/releases), puis lance-le.
+L'installateur n'est pas signé (une signature de code demande un certificat payant) : Windows SmartScreen
+affiche « Windows a protégé votre ordinateur » → **Informations complémentaires** → **Exécuter quand même**.
+
+Au premier lancement :
+
+1. **Adresse du journal** : `http://localhost:8080` si le journal tourne sur ce PC, sinon l'adresse du VPS.
+2. **Journal sur ce PC** (facultatif) : coche la case et choisis le dossier du projet (celui qui contient
+   `docker-compose.yml`). L'application démarrera Docker Desktop et le journal s'ils sont arrêtés.
+3. « Ouvrir mon journal → », puis ton mot de passe habituel.
+
+Pour changer d'adresse plus tard : si le journal ne répond pas, l'écran d'attente propose « Modifier la connexion ».
+La configuration est dans `%APPDATA%\Journal\config.json`.
+
+### Intégration continue
+
+Le workflow [`desktop.yml`](.github/workflows/desktop.yml) tourne sur Windows à chaque PR ou push sur `main`
+qui touche `desktop/` : vérification du code, construction de l'installateur, puis **test de démarrage**
+(l'application doit afficher son écran de premier lancement). L'installateur est téléchargeable dans
+l'onglet **Actions** du dépôt (artefact `journal-desktop-windows`, conservé 30 jours).
+
+Publier une version (crée une Release GitHub avec le `.exe`) :
+
+```bash
+git tag desktop-v1.1.0
+```
+
+```bash
+git push origin desktop-v1.1.0
+```
+
+Le numéro du tag devient la version de l'application (workflow [`desktop-release.yml`](.github/workflows/desktop-release.yml)).
+
+### Construire sur son PC
 
 ```bash
 cd desktop && npm install && node node_modules/electron/install.js && npm run dist
 ```
 
-L'installateur (`desktop/dist/Journal Setup x.y.z.exe`) n'est pas signé : Windows SmartScreen affiche
-« Windows a protégé votre ordinateur » → « Informations complémentaires » → « Exécuter quand même ».
+`node node_modules/electron/install.js` télécharge Electron lui-même : les versions récentes de npm
+bloquent les scripts d'installation des paquets. L'installateur est créé dans `desktop/dist/`.
+`npm start` lance l'application sans l'installer ; `--profile=<dossier>` utilise un profil séparé.
 
 ## 🛠️ Développement
 
@@ -215,7 +253,9 @@ server/        API Express (auth, journées, tâches, médias, migrations)
 web/           Front React (carnet, éditeur de dessin, albums, calendrier)
 backup/        Scripts de sauvegarde / restauration
 legacy/        Ancienne to-do list en JavaScript vanilla
+desktop/       Application de bureau Electron (fenêtre, écran de connexion, installateur)
 docs/          Captures d'écran
+.github/       Intégration continue (installateur Windows, publication des versions)
 Dockerfile     Image unique : build du front + serveur Node
 docker-compose.yml
 ```
