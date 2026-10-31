@@ -3,10 +3,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { api, mediaUrl } from '../lib/api.js';
 import { addDays, isDayKey, todayKey } from '../lib/date.js';
 import { Star } from './Decor.jsx';
-import { IconBook, IconCalendar, IconCamera, IconPencil } from './Icons.jsx';
+import { IconBook, IconCalendar, IconCamera, IconGear, IconPencil } from './Icons.jsx';
 import DayView from './DayView.jsx';
 import AlbumView from './AlbumView.jsx';
 import CalendarView from './CalendarView.jsx';
+import SettingsView from './SettingsView.jsx';
 import MediaViewer from './MediaViewer.jsx';
 import DrawingEditor from './DrawingEditor.jsx';
 
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'photos', label: 'Photos', Icon: IconCamera },
   { id: 'croquis', label: 'Croquis', Icon: IconPencil },
   { id: 'calendrier', label: 'Calendrier', Icon: IconCalendar },
+  { id: 'parametres', label: 'Paramètres', Icon: IconGear },
 ];
 const TAB_ORDER = TABS.map((t) => t.id);
 const NEW_SKETCH = { width: 1600, height: 1100 };
@@ -32,7 +34,7 @@ const flip = {
   exit: (dir) => ({ opacity: 0, x: dir * -70, rotateY: dir * -18, transition: { duration: 0.22, ease: 'easeIn' } }),
 };
 
-export default function Journal({ name, onLogout }) {
+export default function Journal({ name, onLogout, onSettingsSaved }) {
   const [{ tab, day }, setRoute] = useState(readHash);
   const [dir, setDir] = useState(1);
   const [viewer, setViewer] = useState(null);
@@ -149,6 +151,7 @@ export default function Journal({ name, onLogout }) {
                   />
                 )}
                 {tab === 'calendrier' && <CalendarView currentDay={day} onPickDay={(d) => go('jour', d)} />}
+                {tab === 'parametres' && <SettingsView currentTitle={name} onSaved={onSettingsSaved} />}
               </motion.div>
             </AnimatePresence>
           </div>

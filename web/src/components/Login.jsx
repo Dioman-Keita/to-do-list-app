@@ -14,7 +14,7 @@ export default function Login({ name, onLogin }) {
     setError('');
     try {
       await api.login(password);
-      onLogin();
+      await onLogin();
     } catch (err) {
       setError(err.message);
       setBusy(false);

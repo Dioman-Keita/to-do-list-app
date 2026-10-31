@@ -86,7 +86,58 @@ async function findMedia(id) {
   return rows[0];
 }
 
+// ---- Personnalisation du journal ----
+export const COVERS = ['nuit', 'aube', 'foret', 'tempete', 'phare'];
+
+export async function readSettings() {
+  const { rows } = await pool.query('SELECT key, value FROM settings');
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return {
+    ownerName: s.owner_name || '',
+    title: s.title || '',
+    cover: COVERS.includes(s.cover) ? s.cover : 'nuit',
+    setupDone: s.setup_done === true,
+  };
+}
+
 export const apiRouter = express.Router();
+
+apiRouter.get(
+  '/settings',
+  ah(async (req, res) => res.json(await readSettings()))
+);
+
+// Enregistre le prénom, le titre et la couverture ; marque la première configuration comme faite.
+apiRouter.put(
+  '/settings',
+  ah(async (req, res) => {
+    const body = req.body || {};
+    const ownerName = String(body.ownerName ?? '').trim().slice(0, 40);
+    const title = String(body.title ?? '').trim().slice(0, 60);
+    if (!ownerName) throw new HttpError(400, 'Le prénom est obligatoire');
+    if (!title) throw new HttpError(400, 'Le titre est obligatoire');
+    if (!COVERS.includes(body.cover)) throw new HttpError(400, 'Couverture inconnue');
+    const values = { owner_name: ownerName, title, cover: body.cover, setup_done: true };
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const [key, value] of Object.entries(values)) {
+        await client.query(
+          `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+          [key, JSON.stringify(value)]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    res.json(await readSettings());
+  })
+);
 
 // Résumé des jours remplis sur une période (calendrier).
 apiRouter.get(
