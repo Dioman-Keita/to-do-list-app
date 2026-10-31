@@ -1,0 +1,96 @@
+# Application de bureau : construit l'installateur Windows, vérifie qu'il démarre,
+# et le met à disposition (artefact téléchargeable depuis l'onglet Actions).
+name: Application de bureau
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop*.yml'
+  workflow_dispatch:
+  # Réutilisé par desktop-release.yml pour publier une version.
+  workflow_call:
+    inputs:
+      version:
+        description: 'Numéro de version (ex. 1.2.0) ; vide = celui de desktop/package.json'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Installateur Windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # « desktop-v1.2.0 » ou « 1.2.0 » -> 1.2.0 (variable d'environnement : pas d'injection via le tag)
+      - name: Numéro de version
+        if: inputs.version != ''
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version "${VERSION#desktop-v}" --no-git-tag-version --allow-same-version
+
+      - name: Dépendances (Electron compris)
+        run: npm ci
+
+      - name: Vérification du code
+        run: |
+          node --check main.js
+          node --check preload.cjs
+          node --check renderer/setup.js
+
+      - name: Construction de l'installateur
+        run: npx electron-builder --win nsis --publish never
+
+      # L'application doit démarrer et afficher l'écran de premier lancement.
+      - name: Test de démarrage
+        shell: pwsh
+        run: |
+          $app = Resolve-Path 'dist/win-unpacked/Journal.exe'
+          $profileDir = Join-Path $env:RUNNER_TEMP 'journal-profile'
+          $proc = Start-Process -FilePath $app -ArgumentList "--profile=$profileDir", '--remote-debugging-port=9222' -PassThru
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+              Start-Sleep -Seconds 2
+              try {
+                $pages = Invoke-RestMethod -Uri 'http://127.0.0.1:9222/json' -TimeoutSec 2
+                $ok = [bool]($pages | Where-Object { $_.url -like '*setup.html*mode=first*' })
+              } catch { }
+            }
+            if (-not $ok) { throw "L'écran de premier lancement ne s'est pas affiché" }
+            Write-Host "Écran de premier lancement affiché"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Get-Process -Name Journal -ErrorAction SilentlyContinue | Stop-Process -Force
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: journal-desktop-windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 30

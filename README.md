@@ -20,6 +20,8 @@ maintenant dans la liste « À faire » de chaque journée.
 | ![Photo avec annotation dessinée](docs/screenshots/photo-annotee.jpg) | ![Éditeur de dessin](docs/screenshots/editeur-dessin.jpg) |
 | **Album photos** | **Calendrier** |
 | ![Album photos](docs/screenshots/album-photos.jpg) | ![Calendrier du mois](docs/screenshots/calendrier.jpg) |
+| **Premier jour (première configuration)** | **Paramètres** |
+| ![Première configuration](docs/screenshots/premier-jour.jpg) | ![Paramètres](docs/screenshots/parametres.jpg) |
 | **Carnet de croquis** | **Couverture (connexion)** |
 | ![Carnet de croquis](docs/screenshots/croquis.jpg) | ![Écran de connexion](docs/screenshots/connexion.jpg) |
 
@@ -29,6 +31,7 @@ maintenant dans la liste « À faire » de chaque journée.
 
 ## ✨ Fonctionnalités
 
+- **Première ouverture** : le journal demande ton prénom, propose un titre (« Journal de Max », « Journal d’Anaïs ») et une couverture parmi cinq ambiances aquarelle. Tout se change ensuite dans l’onglet **Paramètres** (les journaux déjà installés passent directement par cet onglet).
 - **Une double page par jour** : date sur papier déchiré, humeurs (plusieurs à la fois, dont « Dans les nuages ») et météo en stickers, titre.
 - **Un carnet page par page** : le texte s'écrit sur des pages lignées de taille fixe, sans défilement. Quand une page est pleine, la suite passe toute seule à la page suivante ; « + Page » (ou Ctrl+Entrée) commence une nouvelle page sans finir la courante. Enregistrement automatique.
 - **Chapitres** : « + Chapitre » ouvre un nouveau chapitre dans la même journée (numéroté, avec l'heure). Le sommaire du jour permet d'y sauter.
@@ -52,7 +55,8 @@ maintenant dans la liste « À faire » de chaque journée.
 | Données | PostgreSQL 17 (texte, tâches, métadonnées) + volume Docker pour les images |
 | Éditeur | TipTap (ProseMirror), pages en colonnes CSS |
 | Correcteur | LanguageTool 6.8 (conteneur local, ~1 Go de RAM) |
-| Ops | Docker Compose, conteneur de sauvegarde automatique, Caddy (HTTPS) en option |
+| Bureau | Electron 44 (fenêtre Windows connectée au serveur), installateur NSIS via electron-builder |
+| Ops | Docker Compose, conteneur de sauvegarde automatique, Caddy (HTTPS) en option, GitHub Actions |
 
 ## 🚀 Lancer sur ton PC
 
@@ -165,6 +169,66 @@ Les polices manuscrites sont définies en haut de [`web/src/styles.css`](web/src
    @font-face { font-family: 'MaPolice'; src: url('/fonts/ma-police.woff2') format('woff2'); font-display: swap; }
    ```
 3. Mets `'MaPolice'` en premier dans `--font-hand` / `--font-title`, puis reconstruis : `docker compose up -d --build app`.
+
+## 🖥️ Application de bureau (Windows)
+
+Le dossier [`desktop/`](desktop/) contient une application Electron : le journal dans sa propre
+fenêtre (sans barre de navigateur), qui se connecte au serveur — ce PC avec Docker, ou un VPS.
+Les données, les sauvegardes et le correcteur restent côté serveur.
+
+- **Premier lancement** : adresse du journal (`http://localhost:8080` sur ce PC), test de connexion.
+- **Journal sur ce PC** : en indiquant le dossier du projet, l'application réveille Docker Desktop et
+  lance `docker compose up -d` si le journal dort.
+- Option « ouvrir au démarrage de Windows », fenêtre et taille mémorisées, une seule instance.
+- Sécurité : seul le journal s'affiche dans la fenêtre ; les liens externes s'ouvrent dans le navigateur ;
+  aucune permission (caméra, micro…) accordée.
+- Journal de fonctionnement : `%APPDATA%\Journal\journal-desktop.log`.
+
+### Installer
+
+Télécharge `Journal Setup x.y.z.exe` depuis les
+[Releases GitHub](https://github.com/Dioman-Keita/to-do-list-app/releases), puis lance-le.
+L'installateur n'est pas signé (une signature de code demande un certificat payant) : Windows SmartScreen
+affiche « Windows a protégé votre ordinateur » → **Informations complémentaires** → **Exécuter quand même**.
+
+Au premier lancement :
+
+1. **Adresse du journal** : `http://localhost:8080` si le journal tourne sur ce PC, sinon l'adresse du VPS.
+2. **Journal sur ce PC** (facultatif) : coche la case et choisis le dossier du projet (celui qui contient
+   `docker-compose.yml`). L'application démarrera Docker Desktop et le journal s'ils sont arrêtés.
+3. « Ouvrir mon journal → », puis ton mot de passe habituel.
+
+Pour changer d'adresse plus tard : si le journal ne répond pas, l'écran d'attente propose « Modifier la connexion ».
+La configuration est dans `%APPDATA%\Journal\config.json`.
+
+### Intégration continue
+
+Le workflow [`desktop.yml`](.github/workflows/desktop.yml) tourne sur Windows à chaque PR ou push sur `main`
+qui touche `desktop/` : vérification du code, construction de l'installateur, puis **test de démarrage**
+(l'application doit afficher son écran de premier lancement). L'installateur est téléchargeable dans
+l'onglet **Actions** du dépôt (artefact `journal-desktop-windows`, conservé 30 jours).
+
+Publier une version (crée une Release GitHub avec le `.exe`) :
+
+```bash
+git tag desktop-v1.1.0
+```
+
+```bash
+git push origin desktop-v1.1.0
+```
+
+Le numéro du tag devient la version de l'application (workflow [`desktop-release.yml`](.github/workflows/desktop-release.yml)).
+
+### Construire sur son PC
+
+```bash
+cd desktop && npm install && node node_modules/electron/install.js && npm run dist
+```
+
+`node node_modules/electron/install.js` télécharge Electron lui-même : les versions récentes de npm
+bloquent les scripts d'installation des paquets. L'installateur est créé dans `desktop/dist/`.
+`npm start` lance l'application sans l'installer ; `--profile=<dossier>` utilise un profil séparé.
 
 ## 🛠️ Développement
 
