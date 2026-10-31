@@ -20,6 +20,8 @@ maintenant dans la liste « À faire » de chaque journée.
 | ![Photo avec annotation dessinée](docs/screenshots/photo-annotee.jpg) | ![Éditeur de dessin](docs/screenshots/editeur-dessin.jpg) |
 | **Album photos** | **Calendrier** |
 | ![Album photos](docs/screenshots/album-photos.jpg) | ![Calendrier du mois](docs/screenshots/calendrier.jpg) |
+| **Premier jour (première configuration)** | **Paramètres** |
+| ![Première configuration](docs/screenshots/premier-jour.jpg) | ![Paramètres](docs/screenshots/parametres.jpg) |
 | **Carnet de croquis** | **Couverture (connexion)** |
 | ![Carnet de croquis](docs/screenshots/croquis.jpg) | ![Écran de connexion](docs/screenshots/connexion.jpg) |
 
