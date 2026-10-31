@@ -1779,6 +1779,7 @@ li.done .task-text {
 }
 
 .cover-swatch:hover span,
+.cover-swatch:focus-visible span,
 .cover-swatch.active span {
   opacity: 1;
 }

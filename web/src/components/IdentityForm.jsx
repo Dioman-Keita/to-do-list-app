@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { COVERS, coverById, defaultTitle } from '../lib/identity.js';
 import { Star } from './Decor.jsx';
@@ -48,15 +48,35 @@ export function IdentityFields({ form, autoFocus = false }) {
   );
 }
 
+// Groupe radio accessible : ← → ↑ ↓ changent de couverture, Début / Fin vont aux extrémités,
+// et un seul arrêt de tabulation pour tout le groupe (la couverture choisie).
 export function CoverChooser({ form }) {
+  const refs = useRef([]);
+
+  function onKeyDown(e, index) {
+    const last = COVERS.length - 1;
+    const moves = { ArrowRight: index + 1, ArrowDown: index + 1, ArrowLeft: index - 1, ArrowUp: index - 1, Home: 0, End: last };
+    if (!(e.key in moves)) return;
+    e.preventDefault();
+    const next = (moves[e.key] + COVERS.length) % COVERS.length;
+    form.setCover(COVERS[next].id);
+    refs.current[next]?.focus();
+  }
+
   return (
     <div className="cover-chooser" role="radiogroup" aria-label="Couverture">
-      {COVERS.map((c) => (
+      {COVERS.map((c, i) => (
         <motion.button
           key={c.id}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
           type="button"
           role="radio"
           aria-checked={form.cover === c.id}
+          aria-label={c.label}
+          tabIndex={form.cover === c.id ? 0 : -1}
+          onKeyDown={(e) => onKeyDown(e, i)}
           className={`cover-swatch ${form.cover === c.id ? 'active' : ''}`}
           style={{ background: `linear-gradient(135deg, ${c.a}, ${c.b})` }}
           title={c.label}

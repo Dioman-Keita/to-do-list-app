@@ -27,11 +27,18 @@ export default function App() {
   }, [auth?.cover]);
 
   // Après connexion : relire /api/me pour savoir si la première configuration est à faire.
-  const refresh = () =>
-    api
-      .me()
-      .then(setAuth)
-      .catch(() => setAuth((a) => ({ ...a, authed: true })));
+  // En cas d'échec on reste sur la couverture (l'écran de connexion affiche l'erreur et permet
+  // de réessayer) : ouvrir le journal sans cette information sauterait le « Premier jour ».
+  const refresh = async () => {
+    let me;
+    try {
+      me = await api.me();
+    } catch {
+      throw new Error('Le journal ne répond pas, réessaie dans un instant.');
+    }
+    if (!me.authed) throw new Error('La connexion n’a pas tenu, réessaie.');
+    setAuth(me);
+  };
 
   // Prénom, titre ou couverture enregistrés (première configuration ou Paramètres).
   const applySettings = (s) => setAuth((a) => ({ ...a, name: s.title, cover: s.cover, ownerName: s.ownerName, needsSetup: false }));
