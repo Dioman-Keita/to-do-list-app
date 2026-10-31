@@ -4,3 +4,5 @@ dist/
 backups/
 server/data/
 server/public/
+desktop/node_modules/
+desktop/dist/
