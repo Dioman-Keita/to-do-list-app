@@ -28,6 +28,73 @@ export default function SettingsView({ currentTitle, onSaved }) {
   return <SettingsForm initial={initial} onSaved={onSaved} />;
 }
 
+// Changer le mot de passe : l'ancien est demandé ; les autres appareils sont déconnectés.
+function PasswordChange() {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const mismatch = confirm.length > 0 && next !== confirm;
+  const ready = current && next.length >= 8 && next === confirm;
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!ready) return;
+    setStatus('saving');
+    setError('');
+    try {
+      await api.changePassword(current, next);
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+      setStatus('saved');
+      setOpen(false);
+    } catch (err) {
+      setError(err.message);
+      setStatus('');
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="password-change">
+        <button type="button" className="ink-button" onClick={() => setOpen(true)}>
+          Changer le mot de passe
+        </button>
+        {status === 'saved' && <span className="settings-saved"> nouveau mot de passe noté ✓</span>}
+      </div>
+    );
+  }
+  return (
+    <form className="password-change identity-fields" onSubmit={submit}>
+      <label className="identity-field">
+        <span>Le mot de passe actuel</span>
+        <input type="password" autoComplete="current-password" autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} />
+      </label>
+      <label className="identity-field">
+        <span>Le nouveau (au moins 8 caractères)</span>
+        <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+      </label>
+      <label className="identity-field">
+        <span>{mismatch ? 'Les deux ne sont pas pareils…' : 'Encore une fois'}</span>
+        <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      </label>
+      {error && <p className="form-error">{error}</p>}
+      <p className="identity-hint">Tes autres appareils devront se reconnecter avec le nouveau mot de passe.</p>
+      <div className="settings-actions">
+        <button type="button" className="link-button" onClick={() => setOpen(false)}>
+          Annuler
+        </button>
+        <motion.button type="submit" className="sticker-btn" disabled={!ready || status === 'saving'} whileTap={{ scale: 0.95 }}>
+          {status === 'saving' ? 'Je change…' : 'Changer le mot de passe'}
+        </motion.button>
+      </div>
+    </form>
+  );
+}
+
 function SettingsForm({ initial, onSaved }) {
   const form = useIdentityForm(initial);
   const [saved, setSaved] = useState(initial); // dernière version enregistrée
@@ -64,9 +131,7 @@ function SettingsForm({ initial, onSaved }) {
         <form id="settings-form" onSubmit={submit}>
           <IdentityFields form={form} />
         </form>
-        <p className="identity-hint">
-          Le mot de passe se change dans le fichier <code>.env</code> du serveur (<code>APP_PASSWORD</code>).
-        </p>
+        <PasswordChange />
       </Page>
       <Page side="right" seed="parametres">
         <h2 className="hand-title">La couverture</h2>

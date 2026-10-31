@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { isAuthed, login, logout, requireAuth } from './auth.js';
+import { authStatus, changePassword, initAuth, isAuthed, login, logout, requireAuth, setupPassword } from './auth.js';
 import { migrate, pool } from './db.js';
 import { apiRouter, errorHandler, readSettings, serveMedia } from './routes.js';
 
@@ -27,11 +27,12 @@ app.get('/healthz', async (req, res) => {
 app.get('/api/me', async (req, res, next) => {
   try {
     const s = await readSettings();
-    const authed = isAuthed(req);
+    const authed = await isAuthed(req);
     res.json({
       authed,
       name: s.title || process.env.JOURNAL_NAME || 'Mon journal',
       cover: s.cover,
+      ...(await authStatus()),
       ...(authed && { ownerName: s.ownerName, needsSetup: !s.setupDone }),
     });
   } catch (err) {
@@ -39,6 +40,8 @@ app.get('/api/me', async (req, res, next) => {
   }
 });
 app.post('/api/login', login);
+app.post('/api/setup/password', setupPassword);
+app.put('/api/password', requireAuth, changePassword);
 app.post('/api/logout', logout);
 app.use('/api', requireAuth, apiRouter);
 app.get('/media/:name', requireAuth, serveMedia);
@@ -66,5 +69,6 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Introuvable' }));
 app.use(errorHandler);
 
 await migrate();
+await initAuth();
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => console.log(`Journal prêt sur http://localhost:${port}`));

@@ -60,6 +60,8 @@ export const api = {
 
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (settings) => request('PUT', '/api/settings', settings),
+  setupPassword: (body) => request('POST', '/api/setup/password', body),
+  changePassword: (current, next) => request('PUT', '/api/password', { current, next }),
 
   spellcheck: (text) => request('POST', '/api/spellcheck', { text }),
   addWord: (word) => request('POST', '/api/dictionary', { word }),

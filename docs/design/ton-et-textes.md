@@ -25,6 +25,8 @@ Le journal parle comme **une personne qui écrit dans son carnet**, pas comme un
 | Échec d'enregistrement | pas enregistré ✗ |
 | Couverture de connexion | Privé ! Ne pas lire… |
 | Mot de passe | Le mot de passe secret : / Ouvrir le journal → |
+| Choix du mot de passe | Choisis ton mot de passe secret : / Encore une fois, pour être sûr : / Fermer le cadenas → |
+| Mots de passe différents | Les deux ne sont pas pareils… |
 | Premier jour | Cher journal… Avant d’écrire ta première page, il faut que je sache à qui tu appartiens. |
 | Champs d'identité | Je m’appelle… / Et ce carnet s’appellera… |
 | Polaroïd en cours d'envoi | développement… |

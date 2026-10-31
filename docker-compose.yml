@@ -30,8 +30,15 @@ services:
       PGDATABASE: ${POSTGRES_DB:-journal}
       PGUSER: ${POSTGRES_USER:-journal}
       PGPASSWORD: ${POSTGRES_PASSWORD}
-      APP_PASSWORD: ${APP_PASSWORD:?Définis APP_PASSWORD dans .env}
-      SESSION_SECRET: ${SESSION_SECRET:?Définis SESSION_SECRET dans .env}
+      # Le mot de passe et le secret des sessions sont en base (choisis au premier lancement).
+      # Anciennes installations : s'ils sont encore dans .env, ils sont importés une seule fois.
+      APP_PASSWORD: ${APP_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      # Niveau de protection du premier lancement : auto (code exigé si le journal est
+      # joignable depuis d'autres machines), always, ou never.
+      SETUP_CODE: ${SETUP_CODE:-auto}
+      APP_BIND: ${APP_BIND:-127.0.0.1}
+      DOMAIN: ${DOMAIN:-}
       JOURNAL_NAME: ${JOURNAL_NAME:-Mon journal}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUST_PROXY: ${TRUST_PROXY:-false}

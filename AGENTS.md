@@ -53,6 +53,9 @@ cd desktop && npm run dist        # installateur Windows
    une seule page vierge. Après toute modification de `JournalEditor.jsx`, `extensions.js` ou du CSS
    du carnet, tester : frappe longue (débordement automatique), clic dans le vide d'une page,
    curseur à la frontière de deux pages, zoom 150 %.
-4. **Français partout** : interface, messages de commit, descriptions de PR, documentation.
-5. Sous Windows / Git Bash : préfixer les commandes Docker qui passent des chemins absolus par
+4. **Mot de passe** : uniquement en base (`settings.password_hash`, empreinte scrypt, dans
+   `server/src/auth.js`) ; ne jamais le journaliser, le renvoyer par l'API ni l'écrire en clair.
+   Pour tester une connexion, utiliser l'instance de démo.
+5. **Français partout** : interface, messages de commit, descriptions de PR, documentation.
+6. Sous Windows / Git Bash : préfixer les commandes Docker qui passent des chemins absolus par
    `MSYS_NO_PATHCONV=1`.

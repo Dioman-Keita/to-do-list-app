@@ -1814,6 +1814,44 @@ li.done .task-text {
   text-align: center;
 }
 
+.cover-hint {
+  font-size: 15px;
+  color: var(--ink-soft);
+  margin-top: -4px;
+}
+
+.cover-hint code {
+  font-family: inherit;
+  background: rgba(246, 223, 79, 0.5);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.password-change {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px dashed rgba(51, 48, 43, 0.25);
+}
+
+.password-change .identity-field input {
+  font-family: var(--font-hand);
+  font-size: 22px;
+}
+
+.password-change .settings-actions {
+  justify-content: flex-start;
+  margin-top: 6px;
+}
+
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 18px;
+  color: var(--ink-soft);
+  border-bottom: 1px dashed currentColor;
+}
+
 /* ---------- Petits écrans : une page sous l'autre ---------- */
 @media (max-width: 900px) {
   body {
