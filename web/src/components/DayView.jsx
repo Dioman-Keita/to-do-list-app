@@ -148,6 +148,7 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
           onBlur={() => flush()}
         />
         <JournalEditor
+          day={day}
           content={entry.content}
           legacyBody={entry.body}
           isToday={isToday}

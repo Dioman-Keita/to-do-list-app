@@ -34,6 +34,7 @@ maintenant dans la liste « À faire » de chaque journée.
 - **Première ouverture** : tu choisis ton mot de passe (enregistré en base sous forme d’empreinte, jamais en clair), puis le journal demande ton prénom, propose un titre (« Journal de Max », « Journal d’Anaïs ») et une couverture parmi cinq ambiances aquarelle. Tout se change ensuite dans l’onglet **Paramètres** (les journaux déjà installés passent directement par cet onglet).
 - **Une double page par jour** : date sur papier déchiré, humeurs (plusieurs à la fois, dont « Dans les nuages ») et météo en stickers, titre.
 - **Un carnet page par page** : le texte s'écrit sur des pages lignées de taille fixe, sans défilement. Quand une page est pleine, la suite passe toute seule à la page suivante ; « + Page » (ou Ctrl+Entrée) commence une nouvelle page sans finir la courante. Enregistrement automatique.
+- **Arracher une page** : les ciseaux ✂ sous la feuille retirent la page affichée (après confirmation). Elle part dans la **corbeille**, qui ne se vide jamais toute seule : on peut la recoller à sa place à tout moment, et remettre les photos ou croquis retirés.
 - **Chapitres** : « + Chapitre » ouvre un nouveau chapitre dans la même journée (numéroté, avec l'heure). Le sommaire du jour permet d'y sauter.
 - **Mise en forme** : gras, italique, souligné, barré, texte en grand, surligneur jaune / rose / bleu.
 - **Correcteur français** : fautes d'orthographe soulignées en rouge, de grammaire en bleu ; clic droit pour les suggestions, « Ignorer » ou « Ajouter au dictionnaire ». Moteur LanguageTool exécuté en local (le texte ne quitte pas la machine) ; s'il ne répond pas, le correcteur du navigateur prend le relais.
@@ -149,7 +150,9 @@ docker compose start app
 Sans horodatage, `restore.sh` liste les sauvegardes disponibles.
 Sous Git Bash (Windows), préfixe les commandes avec `MSYS_NO_PATHCONV=1`.
 
-Les images supprimées depuis l'appli sont seulement masquées : le fichier reste sur le disque.
+Les images supprimées depuis l'appli sont seulement masquées : le fichier reste sur le disque
+(et dans les sauvegardes). Les pages arrachées sont gardées dans la table `trash`. Tout se
+retrouve dans l'onglet **Corbeille**, qui n'est jamais vidé automatiquement.
 
 ### 🚚 Réinstaller sur un nouveau VPS à partir d'une sauvegarde
 

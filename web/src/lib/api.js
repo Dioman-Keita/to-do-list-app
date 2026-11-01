@@ -57,6 +57,11 @@ export const api = {
   saveDrawing: (id, blob) => request('PUT', `/api/media/${id}/drawing`, fileForm(blob, 'dessin.png')),
   updateMedia: (id, patch) => request('PATCH', `/api/media/${id}`, patch),
   deleteMedia: (id) => request('DELETE', `/api/media/${id}`),
+  restoreMedia: (id) => request('POST', `/api/media/${id}/restore`),
+
+  trashPage: (day, page) => request('POST', `/api/days/${day}/trash`, page),
+  listTrash: () => request('GET', '/api/trash'),
+  restoreTrash: (id) => request('POST', `/api/trash/${id}/restore`),
 
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (settings) => request('PUT', '/api/settings', settings),

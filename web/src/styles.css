@@ -1251,6 +1251,7 @@ li.done .task-text {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow: clip;
   padding-top: 24px;
   padding-bottom: 22px;
 }
@@ -1358,6 +1359,7 @@ li.done .task-text {
   flex: 1;
   min-height: 180px;
   overflow: hidden;
+  overflow: clip; /* le focus ou la sélection ne doivent jamais faire « monter » le carnet */
 }
 
 /* Une colonne CSS = une page. Le texte qui dépasse part dans la colonne suivante,
@@ -1533,6 +1535,40 @@ li.done .task-text {
 
 .pager .toc-toggle {
   font-size: 16px;
+}
+
+/* Arracher la page : ciseaux discrets, confirmation sur un bout de papier au-dessus du pager. */
+.pager .tear-toggle {
+  border-bottom: 0;
+  font-size: 17px;
+  opacity: 0.6;
+}
+
+.pager .tear-toggle:hover:not(:disabled),
+.pager .tear-toggle[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.tear-confirm {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) rotate(-1deg);
+  z-index: 20;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--paper-light) var(--noise);
+  border: 1.5px solid var(--ink);
+  border-radius: 10px 8px 12px 7px;
+  box-shadow: 3px 5px 0 rgba(51, 48, 43, 0.6);
+}
+
+.pager .tear-confirm .tear-yes {
+  color: #c43d78;
 }
 
 .toc {
@@ -1959,4 +1995,88 @@ li.done .task-text {
   .tool-group.end {
     margin-left: 0;
   }
+}
+
+/* ---------- Corbeille ---------- */
+.trash-hint {
+  margin: 0 0 14px;
+  font-size: 18px;
+  color: var(--ink-soft);
+}
+
+.trash-restored {
+  margin: 0 0 12px;
+  font-size: 19px;
+  color: #2f7a4a;
+}
+
+.trash-pages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.trash-scrap {
+  filter: drop-shadow(0 3px 3px rgba(60, 40, 10, 0.25));
+  transform: rotate(var(--tilt, 0deg));
+}
+
+.trash-scrap .torn {
+  padding: 16px 26px 14px;
+}
+
+.trash-meta {
+  margin: 0 0 4px;
+  font-family: var(--font-title);
+  font-size: 20px;
+}
+
+.trash-meta small {
+  font-family: var(--font-hand);
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
+.trash-preview {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.trash-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.trash-media {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 26px 22px;
+  padding-top: 8px;
+}
+
+.trash-polaroid {
+  margin: 0;
+  padding-bottom: 10px;
+}
+
+.trash-polaroid .polaroid-img img {
+  filter: grayscale(0.85) sepia(0.15);
+  opacity: 0.8;
+}
+
+.trash-putback {
+  align-self: center;
+  margin-top: 4px;
+  font-size: 17px;
 }

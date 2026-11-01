@@ -103,7 +103,9 @@ derniers créent des lignes manquantes ou pointillées à certains zooms.
 | `Polaroid` | `Polaroid.jsx` | Toute image : cadre blanc, scotch, inclinaison `tilt`, légende manuscrite |
 | `.footer-strip` | `styles.css` | Navigation sous le carnet (jamais par-dessus les pages) |
 | `.fmt-bar` / `.fmt` | `JournalEditor.jsx` | Barre de mise en forme du carnet |
-| `.spell-menu`, `.toc` | `styles.css` | Petits menus flottants : papier, bord encré, ombre décalée |
+| `.spell-menu`, `.toc`, `.tear-confirm` | `styles.css` | Petits menus flottants : papier, bord encré, ombre décalée. Une confirmation (« Arracher la page 2 ? ») est un de ces bouts de papier au-dessus du pager, jamais une boîte de dialogue |
+| `.trash-scrap` | `TrashView.jsx` | Page arrachée dans la corbeille : `.torn` légèrement penché, aperçu sur 3 lignes, « Recoller » |
+| `.trash-polaroid` | `TrashView.jsx` | Image retirée : polaroïd délavé (gris sépia), bouton « Remettre » |
 | `CoverPreview`, `CoverChooser` | `IdentityForm.jsx` | Aperçu et choix de couverture |
 
 Messages d'état : écrits **dans la page**, en `--ink-soft` (« enregistré ✓ ») ou `.form-error` pour
@@ -129,6 +131,17 @@ Invariants à ne jamais casser :
 - **La feuille ne bouge jamais pendant la frappe** : aucun élément au-dessus d'elle ne doit changer
   de taille (statut, barre d'outils, sommaire). Tout ajout près de la feuille doit avoir une hauteur fixe.
 - Une **seule page vierge** à la fois ; les pages suivantes se créent en écrivant.
+- **Rien autour du carnet ne défile** : `.pages-frame` et la page d'écriture sont en `overflow: clip`,
+  la feuille est remise à `scrollTop = 0` et le focus posé par le pager ne doit pas faire défiler la
+  fenêtre (`holdStill`). Ne pas mettre `overflow: clip` sur `.page` : un élément de grille non
+  défilant reprend la hauteur de son contenu et agrandit tout le carnet.
+- **Arracher une page** (✂ dans le pager) retire exactement ce qui est affiché sur la page, après
+  l'avoir envoyé à la corbeille ; une page sans texte est simplement retirée.
+
+### La corbeille
+
+Elle ne se vide **jamais**, ni toute seule ni à la main : pas de bouton « supprimer définitivement ».
+On y recolle une page (elle revient à sa place, sur une page à elle) ou on y remet une photo.
 
 ## 6. Mouvement
 
