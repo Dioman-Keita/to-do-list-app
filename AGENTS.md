@@ -47,7 +47,10 @@ cd desktop && npm run dist        # installateur Windows
      modifier une migration déjà déployée.
    - Avant de déployer sur le journal réel : `docker compose exec backup sh /scripts/backup.sh once`,
      puis comparer les comptages avant / après.
-   - Toute suppression côté interface est douce (`deleted_at`) ou limitée à du vide (pages vierges).
+   - Toute suppression côté interface est douce (`deleted_at`, corbeille) ou limitée à du vide
+     (pages vierges). Seule exception : « effacer » / « Vider la corbeille » dans l'onglet Corbeille,
+     voulu par l'utilisateur, toujours derrière une confirmation explicite. Rien ne doit jamais
+     vider la corbeille automatiquement.
 3. **Le carnet page par page a des invariants** (voir le système de design) : lignes de 30 px, une
    colonne CSS par page, aucun défilement vertical, la feuille ne bouge jamais pendant la frappe,
    une seule page vierge. Après toute modification de `JournalEditor.jsx`, `extensions.js` ou du CSS

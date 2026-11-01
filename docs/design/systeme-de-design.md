@@ -140,8 +140,10 @@ Invariants à ne jamais casser :
 
 ### La corbeille
 
-Elle ne se vide **jamais**, ni toute seule ni à la main : pas de bouton « supprimer définitivement ».
-On y recolle une page (elle revient à sa place, sur une page à elle) ou on y remet une photo.
+Elle ne se vide **jamais toute seule**. On y recolle une page (elle revient à sa place, sur une
+page à elle) ou on y remet une photo. Effacer pour toujours (« effacer » sur un élément, « Vider la
+corbeille ») passe toujours par un bout de papier de confirmation `.trash-confirm` (« oui, effacer »
+en rouge, « non ») ; le fichier image est alors supprimé du disque.
 
 ## 6. Mouvement
 

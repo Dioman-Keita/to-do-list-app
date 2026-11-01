@@ -182,11 +182,22 @@ const WINDOW_MS = 15 * 60 * 1000;
 function tooManyAttempts(req) {
   const now = Date.now();
   const recent = (failures.get(req.ip) || []).filter((t) => now - t < WINDOW_MS);
-  failures.set(req.ip, recent);
+  if (recent.length) failures.set(req.ip, recent);
+  else failures.delete(req.ip); // pas d'entrée pour une adresse sans échec récent
   return recent.length >= 10;
 }
 
-const recordFailure = (req) => failures.get(req.ip).push(Date.now());
+const recordFailure = (req) => failures.set(req.ip, [...(failures.get(req.ip) || []), Date.now()]);
+
+// Ménage régulier : les adresses dont tous les échecs sont expirés disparaissent.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, times] of failures) {
+    const recent = times.filter((t) => now - t < WINDOW_MS);
+    if (recent.length) failures.set(ip, recent);
+    else failures.delete(ip);
+  }
+}, WINDOW_MS).unref();
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
@@ -261,12 +272,16 @@ export const changePassword = wrap(async (req, res) => {
 // Utilisé par le changement de mot de passe et par la commande de secours.
 export async function setPassword(password) {
   const hash = await hashPassword(password);
-  const s = await readKeys();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await upsert(client, 'password_hash', hash);
-    await upsert(client, 'password_version', Number(s.password_version || 0) + 1);
+    // Incrément atomique en base : deux changements simultanés donnent deux versions distinctes.
+    await client.query(
+      `INSERT INTO settings (key, value) VALUES ('password_version', '1'::jsonb)
+       ON CONFLICT (key) DO UPDATE
+         SET value = to_jsonb(coalesce((settings.value #>> '{}')::int, 0) + 1), updated_at = now()`
+    );
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

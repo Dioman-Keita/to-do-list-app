@@ -62,6 +62,9 @@ export const api = {
   trashPage: (day, page) => request('POST', `/api/days/${day}/trash`, page),
   listTrash: () => request('GET', '/api/trash'),
   restoreTrash: (id) => request('POST', `/api/trash/${id}/restore`),
+  deleteTrash: (id) => request('DELETE', `/api/trash/${id}`),
+  deleteMediaForever: (id) => request('DELETE', `/api/media/${id}/forever`),
+  emptyTrash: () => request('DELETE', '/api/trash'),
 
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (settings) => request('PUT', '/api/settings', settings),

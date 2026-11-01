@@ -6,13 +6,14 @@ import { Page, TornLabel } from './Decor.jsx';
 
 const when = (iso) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 
-// La corbeille : les pages arrachées et les photos / croquis retirés. Rien n'y est jamais
-// effacé (ni automatiquement, ni à la main) : on peut toujours recoller ou remettre.
+// La corbeille : les pages arrachées et les photos / croquis retirés. Elle ne se vide jamais
+// toute seule ; effacer pour toujours se fait élément par élément (ou « Vider »), après confirmation.
 export default function TrashView({ onPickDay, onRestoredMedia }) {
   const [trash, setTrash] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(null);
   const [restored, setRestored] = useState(null); // dernière page recollée : { day }
+  const [confirm, setConfirm] = useState(null); // 'page-ID' | 'media-ID' | 'all'
 
   useEffect(() => {
     api.listTrash().then(setTrash).catch((err) => setError(err.message));
@@ -46,6 +47,40 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
     }
   }
 
+  async function erase(key, action, update) {
+    setBusy(key);
+    setError('');
+    try {
+      await action();
+      setTrash(update);
+      setConfirm(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const erasePage = (p) =>
+    erase(`page-${p.id}`, () => api.deleteTrash(p.id), (t) => ({ ...t, pages: t.pages.filter((x) => x.id !== p.id) }));
+  const eraseMedia = (m) =>
+    erase(`media-${m.id}`, () => api.deleteMediaForever(m.id), (t) => ({ ...t, media: t.media.filter((x) => x.id !== m.id) }));
+  const eraseAll = () => erase('all', () => api.emptyTrash(), () => ({ pages: [], media: [] }));
+
+  // Petit bout de papier « Effacer pour toujours ? oui / non » (même style que l'arrachage).
+  const ask = (key, label, onYes) =>
+    confirm === key ? (
+      <span className="trash-confirm" role="alertdialog" aria-label={label}>
+        {label}
+        <button type="button" className="link-button danger-link" disabled={busy === key} onClick={onYes}>
+          {busy === key ? 'j’efface…' : 'oui, effacer'}
+        </button>
+        <button type="button" className="link-button" onClick={() => setConfirm(null)}>
+          non
+        </button>
+      </span>
+    ) : null;
+
   const pages = trash?.pages || [];
   const media = trash?.media || [];
 
@@ -57,8 +92,14 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
             <span className="day-weekday">La corbeille</span>
             <span className="day-date">{trash ? `${pages.length} page${pages.length > 1 ? 's' : ''} arrachée${pages.length > 1 ? 's' : ''}` : '…'}</span>
           </TornLabel>
+          {pages.length + media.length > 0 && confirm !== 'all' && (
+            <motion.button type="button" className="sticker-btn plain" whileTap={{ scale: 0.95 }} onClick={() => setConfirm('all')}>
+              Vider la corbeille
+            </motion.button>
+          )}
         </header>
-        <p className="trash-hint">Rien ne s’efface tout seul ici : tout peut être recollé, même dans des années.</p>
+        {ask('all', `Tout effacer pour toujours (${pages.length + media.length}) ?`, eraseAll)}
+        <p className="trash-hint">Rien ne s’efface tout seul ici : seulement si tu le décides. Effacé, c’est pour toujours.</p>
         {error && <p className="form-error">{error}</p>}
         <AnimatePresence>
           {restored && (
@@ -87,7 +128,11 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
                     {longDate(p.day)} <small>· arrachée le {when(p.created_at)}</small>
                   </p>
                   <p className="trash-preview">{p.preview || '(page sans texte)'}</p>
+                  {ask(`page-${p.id}`, 'Effacer cette page pour toujours ?', () => erasePage(p))}
                   <div className="trash-actions">
+                    <button type="button" className="link-button trash-erase" onClick={() => setConfirm(`page-${p.id}`)}>
+                      effacer
+                    </button>
                     <button type="button" className="link-button" onClick={() => onPickDay(p.day)}>
                       voir la journée
                     </button>
@@ -133,6 +178,13 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
                 >
                   Remettre
                 </button>
+                {confirm === `media-${m.id}` ? (
+                  ask(`media-${m.id}`, 'Pour toujours ?', () => eraseMedia(m))
+                ) : (
+                  <button type="button" className="link-button trash-erase" onClick={() => setConfirm(`media-${m.id}`)}>
+                    effacer
+                  </button>
+                )}
               </motion.figure>
             ))}
           </AnimatePresence>

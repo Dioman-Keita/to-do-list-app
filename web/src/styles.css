@@ -2080,3 +2080,38 @@ li.done .task-text {
   margin-top: 4px;
   font-size: 17px;
 }
+
+.trash-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 4px 0 8px;
+  padding: 4px 12px;
+  font-size: 17px;
+  color: var(--ink);
+  background: var(--paper-light) var(--noise);
+  border: 1.5px solid var(--ink);
+  border-radius: 10px 8px 12px 7px;
+  box-shadow: 3px 4px 0 rgba(51, 48, 43, 0.6);
+  transform: rotate(-0.8deg);
+}
+
+.trash-polaroid .trash-confirm {
+  font-size: 15px;
+  justify-content: center;
+}
+
+.link-button.danger-link {
+  color: #c0392b;
+}
+
+.trash-erase {
+  margin-right: auto;
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
+.trash-polaroid .trash-erase {
+  margin: 2px auto 0;
+}

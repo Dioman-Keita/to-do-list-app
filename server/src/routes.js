@@ -486,6 +486,41 @@ apiRouter.post(
   })
 );
 
+// Effacer pour toujours (seulement depuis la corbeille, sur demande explicite).
+// Les sauvegardes déjà faites gardent encore l'élément jusqu'à leur rotation.
+apiRouter.delete(
+  '/trash/:id',
+  ah(async (req, res) => {
+    const { rowCount } = await pool.query('DELETE FROM trash WHERE id = $1 AND restored_at IS NULL', [parseId(req.params.id)]);
+    if (!rowCount) throw new HttpError(404, 'Introuvable');
+    res.status(204).end();
+  })
+);
+
+async function purgeMedia(where, params) {
+  const { rows } = await pool.query(`DELETE FROM media WHERE deleted_at IS NOT NULL AND ${where} RETURNING file, thumb, overlay`, params);
+  await Promise.all(rows.map((m) => removeFiles(m.file, m.thumb, m.overlay)));
+  return rows.length;
+}
+
+apiRouter.delete(
+  '/media/:id/forever',
+  ah(async (req, res) => {
+    if (!(await purgeMedia('id = $1', [parseId(req.params.id)]))) throw new HttpError(404, 'Introuvable');
+    res.status(204).end();
+  })
+);
+
+// Vider la corbeille : toutes les pages arrachées et toutes les images retirées.
+apiRouter.delete(
+  '/trash',
+  ah(async (req, res) => {
+    const { rowCount } = await pool.query('DELETE FROM trash WHERE restored_at IS NULL');
+    const media = await purgeMedia('true', []);
+    res.json({ pages: rowCount, media });
+  })
+);
+
 apiRouter.post(
   '/media/:id/restore',
   ah(async (req, res) => {
