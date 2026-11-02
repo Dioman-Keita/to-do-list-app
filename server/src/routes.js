@@ -511,12 +511,20 @@ apiRouter.delete(
   })
 );
 
-// Vider la corbeille : toutes les pages arrachées et toutes les images retirées.
-apiRouter.delete(
-  '/trash',
+// Vider la corbeille : seulement les éléments affichés quand on a confirmé (identifiants envoyés
+// par l'interface). Ce qui arrive entre-temps (autre appareil) n'est jamais effacé sans avoir été vu.
+const parseIds = (value) => {
+  if (!Array.isArray(value) || value.length > 10000) throw new HttpError(400, 'Liste invalide');
+  return value.map(parseId);
+};
+
+apiRouter.post(
+  '/trash/empty',
   ah(async (req, res) => {
-    const { rowCount } = await pool.query('DELETE FROM trash WHERE restored_at IS NULL');
-    const media = await purgeMedia('true', []);
+    const pageIds = parseIds(req.body?.pageIds);
+    const mediaIds = parseIds(req.body?.mediaIds);
+    const { rowCount } = await pool.query('DELETE FROM trash WHERE restored_at IS NULL AND id = ANY($1::int[])', [pageIds]);
+    const media = await purgeMedia('id = ANY($1::int[])', [mediaIds]);
     res.json({ pages: rowCount, media });
   })
 );

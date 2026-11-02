@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api, mediaUrl } from '../lib/api.js';
 import { longDate, shortDate } from '../lib/date.js';
@@ -14,6 +14,7 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
   const [busy, setBusy] = useState(null);
   const [restored, setRestored] = useState(null); // dernière page recollée : { day }
   const [confirm, setConfirm] = useState(null); // 'page-ID' | 'media-ID' | 'all'
+  const shown = useRef({ pageIds: [], mediaIds: [] }); // ce que « Vider » effacera : ce qui était affiché
 
   useEffect(() => {
     api.listTrash().then(setTrash).catch((err) => setError(err.message));
@@ -65,7 +66,18 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
     erase(`page-${p.id}`, () => api.deleteTrash(p.id), (t) => ({ ...t, pages: t.pages.filter((x) => x.id !== p.id) }));
   const eraseMedia = (m) =>
     erase(`media-${m.id}`, () => api.deleteMediaForever(m.id), (t) => ({ ...t, media: t.media.filter((x) => x.id !== m.id) }));
-  const eraseAll = () => erase('all', () => api.emptyTrash(), () => ({ pages: [], media: [] }));
+  const eraseAll = () => {
+    const { pageIds, mediaIds } = shown.current;
+    erase(
+      'all',
+      () => api.emptyTrash(pageIds, mediaIds),
+      (t) => ({ pages: t.pages.filter((p) => !pageIds.includes(p.id)), media: t.media.filter((m) => !mediaIds.includes(m.id)) })
+    );
+  };
+  const askEmpty = () => {
+    shown.current = { pageIds: pages.map((p) => p.id), mediaIds: media.map((m) => m.id) };
+    setConfirm('all');
+  };
 
   // Petit bout de papier « Effacer pour toujours ? oui / non » (même style que l'arrachage).
   const ask = (key, label, onYes) =>
@@ -93,7 +105,7 @@ export default function TrashView({ onPickDay, onRestoredMedia }) {
             <span className="day-date">{trash ? `${pages.length} page${pages.length > 1 ? 's' : ''} arrachée${pages.length > 1 ? 's' : ''}` : '…'}</span>
           </TornLabel>
           {pages.length + media.length > 0 && confirm !== 'all' && (
-            <motion.button type="button" className="sticker-btn plain" whileTap={{ scale: 0.95 }} onClick={() => setConfirm('all')}>
+            <motion.button type="button" className="sticker-btn plain" whileTap={{ scale: 0.95 }} onClick={askEmpty}>
               Vider la corbeille
             </motion.button>
           )}
