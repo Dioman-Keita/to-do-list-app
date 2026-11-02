@@ -398,6 +398,149 @@ apiRouter.delete(
   })
 );
 
+// ---- Corbeille (jamais vidée automatiquement, aucune suppression définitive) ----
+
+// Texte brut d'un document du carnet (même forme que getText côté éditeur : un bloc par ligne).
+function docText(node) {
+  if (node.type === 'text') return node.text || '';
+  const inner = (node.content || []).map(docText);
+  return ['doc', 'bulletList', 'orderedList', 'listItem'].includes(node.type) ? inner.join('\n') : inner.join('');
+}
+
+// Ancien texte brut (avant l'éditeur) -> document : un paragraphe par ligne.
+const legacyDoc = (body) => ({
+  type: 'doc',
+  content: String(body || '').split('\n').map((line) => (line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' })),
+});
+
+// Une page arrachée : le client envoie les blocs retirés AVANT de les effacer de la journée.
+apiRouter.post(
+  '/days/:day/trash',
+  ah(async (req, res) => {
+    const day = parseDay(req.params.day);
+    const { blocks, blockIndex } = req.body || {};
+    if (!Array.isArray(blocks) || !blocks.length || blocks.some((b) => !b || typeof b.type !== 'string')) {
+      throw new HttpError(400, 'Page invalide');
+    }
+    const preview = docText({ type: 'doc', content: blocks }).replace(/\s+/g, ' ').trim().slice(0, 280);
+    const index = Number.isInteger(blockIndex) && blockIndex >= 0 ? blockIndex : 0;
+    const { rows } = await pool.query(
+      `INSERT INTO trash (day, content, preview, block_index) VALUES ($1, $2::jsonb, $3, $4)
+       RETURNING id, day, preview, created_at`,
+      [day, JSON.stringify(blocks), preview, index]
+    );
+    res.status(201).json(rows[0]);
+  })
+);
+
+apiRouter.get(
+  '/trash',
+  ah(async (req, res) => {
+    const [pages, media] = await Promise.all([
+      pool.query(
+        `SELECT id, day, preview, created_at FROM trash WHERE restored_at IS NULL ORDER BY created_at DESC, id DESC`
+      ),
+      pool.query(`SELECT ${MEDIA_COLS}, deleted_at FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC`),
+    ]);
+    res.json({ pages: pages.rows, media: media.rows });
+  })
+);
+
+// Recoller une page à sa place d'origine, sur une page à elle (sauts de page autour).
+apiRouter.post(
+  '/trash/:id/restore',
+  ah(async (req, res) => {
+    const id = parseId(req.params.id);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query('SELECT * FROM trash WHERE id = $1 AND restored_at IS NULL FOR UPDATE', [id]);
+      const item = rows[0];
+      if (!item) throw new HttpError(404, 'Déjà recollée ou introuvable');
+      const entry = (await client.query('SELECT content, body FROM entries WHERE day = $1 FOR UPDATE', [item.day])).rows[0];
+      const doc = entry?.content || legacyDoc(entry?.body);
+      const blocks = [...(doc.content || [])];
+      // Une journée vide = un seul paragraphe vide : on le remplace.
+      if (blocks.length === 1 && blocks[0].type === 'paragraph' && !blocks[0].content?.length) blocks.length = 0;
+      const at = Math.min(item.block_index, blocks.length);
+      const isBreak = (b) => b?.type === 'pageBreak';
+      const piece = [...item.content];
+      if (at > 0 && !isBreak(blocks[at - 1]) && !isBreak(piece[0])) piece.unshift({ type: 'pageBreak' });
+      if (at < blocks.length && !isBreak(blocks[at]) && !isBreak(piece[piece.length - 1])) piece.push({ type: 'pageBreak' });
+      blocks.splice(at, 0, ...piece);
+      const content = { ...doc, type: 'doc', content: blocks };
+      await client.query(
+        `INSERT INTO entries (day, content, content_text) VALUES ($1, $2::jsonb, $3)
+         ON CONFLICT (day) DO UPDATE SET content = EXCLUDED.content, content_text = EXCLUDED.content_text, updated_at = now()`,
+        [item.day, JSON.stringify(content), docText(content)]
+      );
+      await client.query('UPDATE trash SET restored_at = now() WHERE id = $1', [id]);
+      await client.query('COMMIT');
+      res.json({ day: item.day });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  })
+);
+
+// Effacer pour toujours (seulement depuis la corbeille, sur demande explicite).
+// Les sauvegardes déjà faites gardent encore l'élément jusqu'à leur rotation.
+apiRouter.delete(
+  '/trash/:id',
+  ah(async (req, res) => {
+    const { rowCount } = await pool.query('DELETE FROM trash WHERE id = $1 AND restored_at IS NULL', [parseId(req.params.id)]);
+    if (!rowCount) throw new HttpError(404, 'Introuvable');
+    res.status(204).end();
+  })
+);
+
+async function purgeMedia(where, params) {
+  const { rows } = await pool.query(`DELETE FROM media WHERE deleted_at IS NOT NULL AND ${where} RETURNING file, thumb, overlay`, params);
+  await Promise.all(rows.map((m) => removeFiles(m.file, m.thumb, m.overlay)));
+  return rows.length;
+}
+
+apiRouter.delete(
+  '/media/:id/forever',
+  ah(async (req, res) => {
+    if (!(await purgeMedia('id = $1', [parseId(req.params.id)]))) throw new HttpError(404, 'Introuvable');
+    res.status(204).end();
+  })
+);
+
+// Vider la corbeille : seulement les éléments affichés quand on a confirmé (identifiants envoyés
+// par l'interface). Ce qui arrive entre-temps (autre appareil) n'est jamais effacé sans avoir été vu.
+const parseIds = (value) => {
+  if (!Array.isArray(value) || value.length > 10000) throw new HttpError(400, 'Liste invalide');
+  return value.map(parseId);
+};
+
+apiRouter.post(
+  '/trash/empty',
+  ah(async (req, res) => {
+    const pageIds = parseIds(req.body?.pageIds);
+    const mediaIds = parseIds(req.body?.mediaIds);
+    const { rowCount } = await pool.query('DELETE FROM trash WHERE restored_at IS NULL AND id = ANY($1::int[])', [pageIds]);
+    const media = await purgeMedia('id = ANY($1::int[])', [mediaIds]);
+    res.json({ pages: rowCount, media });
+  })
+);
+
+apiRouter.post(
+  '/media/:id/restore',
+  ah(async (req, res) => {
+    const { rows } = await pool.query(
+      `UPDATE media SET deleted_at = NULL, updated_at = now() WHERE id = $1 AND deleted_at IS NOT NULL RETURNING ${MEDIA_COLS}`,
+      [parseId(req.params.id)]
+    );
+    if (!rows[0]) throw new HttpError(404, 'Déjà remise ou introuvable');
+    res.json(rows[0]);
+  })
+);
+
 const FILE_RE = /^[0-9a-f-]{36}(-t)?\.(jpg|png|webp)$/;
 
 export function serveMedia(req, res) {

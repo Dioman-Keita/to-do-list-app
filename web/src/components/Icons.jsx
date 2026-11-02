@@ -37,6 +37,14 @@ export const IconGear = () => (
   </Doodle>
 );
 
+export const IconTrash = () => (
+  <Doodle>
+    <path d="M8 11h24M16 11V7h8v4" />
+    <path d="M11 11l2 23h14l2-23" />
+    <path d="M17 17l1 11M23 17l-1 11" />
+  </Doodle>
+);
+
 export const IconCalendar = () => (
   <Doodle>
     <rect x="6" y="9" width="28" height="25" rx="2" />

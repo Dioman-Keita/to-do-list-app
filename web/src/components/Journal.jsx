@@ -3,11 +3,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { api, mediaUrl } from '../lib/api.js';
 import { addDays, isDayKey, todayKey } from '../lib/date.js';
 import { Star } from './Decor.jsx';
-import { IconBook, IconCalendar, IconCamera, IconGear, IconPencil } from './Icons.jsx';
+import { IconBook, IconCalendar, IconCamera, IconGear, IconPencil, IconTrash } from './Icons.jsx';
 import DayView from './DayView.jsx';
 import AlbumView from './AlbumView.jsx';
 import CalendarView from './CalendarView.jsx';
 import SettingsView from './SettingsView.jsx';
+import TrashView from './TrashView.jsx';
 import MediaViewer from './MediaViewer.jsx';
 import DrawingEditor from './DrawingEditor.jsx';
 
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'photos', label: 'Photos', Icon: IconCamera },
   { id: 'croquis', label: 'Croquis', Icon: IconPencil },
   { id: 'calendrier', label: 'Calendrier', Icon: IconCalendar },
+  { id: 'corbeille', label: 'Corbeille', Icon: IconTrash },
   { id: 'parametres', label: 'Paramètres', Icon: IconGear },
 ];
 const TAB_ORDER = TABS.map((t) => t.id);
@@ -151,6 +153,7 @@ export default function Journal({ name, onLogout, onSettingsSaved }) {
                   />
                 )}
                 {tab === 'calendrier' && <CalendarView currentDay={day} onPickDay={(d) => go('jour', d)} />}
+                {tab === 'corbeille' && <TrashView onPickDay={(d) => go('jour', d)} onRestoredMedia={reload} />}
                 {tab === 'parametres' && <SettingsView currentTitle={name} onSaved={onSettingsSaved} />}
               </motion.div>
             </AnimatePresence>

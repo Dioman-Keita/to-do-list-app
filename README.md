@@ -31,9 +31,10 @@ maintenant dans la liste « À faire » de chaque journée.
 
 ## ✨ Fonctionnalités
 
-- **Première ouverture** : le journal demande ton prénom, propose un titre (« Journal de Max », « Journal d’Anaïs ») et une couverture parmi cinq ambiances aquarelle. Tout se change ensuite dans l’onglet **Paramètres** (les journaux déjà installés passent directement par cet onglet).
+- **Première ouverture** : tu choisis ton mot de passe (enregistré en base sous forme d’empreinte, jamais en clair), puis le journal demande ton prénom, propose un titre (« Journal de Max », « Journal d’Anaïs ») et une couverture parmi cinq ambiances aquarelle. Tout se change ensuite dans l’onglet **Paramètres** (les journaux déjà installés passent directement par cet onglet).
 - **Une double page par jour** : date sur papier déchiré, humeurs (plusieurs à la fois, dont « Dans les nuages ») et météo en stickers, titre.
 - **Un carnet page par page** : le texte s'écrit sur des pages lignées de taille fixe, sans défilement. Quand une page est pleine, la suite passe toute seule à la page suivante ; « + Page » (ou Ctrl+Entrée) commence une nouvelle page sans finir la courante. Enregistrement automatique.
+- **Arracher une page** : les ciseaux ✂ sous la feuille retirent la page affichée (après confirmation). Elle part dans la **corbeille**, qui ne se vide jamais toute seule : on peut la recoller à sa place à tout moment, remettre les photos ou croquis retirés, ou les effacer pour toujours (élément par élément ou « Vider la corbeille », après confirmation).
 - **Chapitres** : « + Chapitre » ouvre un nouveau chapitre dans la même journée (numéroté, avec l'heure). Le sommaire du jour permet d'y sauter.
 - **Mise en forme** : gras, italique, souligné, barré, texte en grand, surligneur jaune / rose / bleu.
 - **Correcteur français** : fautes d'orthographe soulignées en rouge, de grammaire en bleu ; clic droit pour les suggestions, « Ignorer » ou « Ajouter au dictionnaire ». Moteur LanguageTool exécuté en local (le texte ne quitte pas la machine) ; s'il ne répond pas, le correcteur du navigateur prend le relais.
@@ -66,14 +67,13 @@ Prérequis : Docker Desktop.
 cp .env.example .env
 ```
 
-Dans `.env`, remplis au minimum `APP_PASSWORD`, `SESSION_SECRET` et `POSTGRES_PASSWORD`
-(génère des valeurs avec `openssl rand -hex 32`). Puis :
+Dans `.env`, remplis `POSTGRES_PASSWORD` (génère une valeur avec `openssl rand -hex 32`). Puis :
 
 ```bash
 docker compose up -d --build
 ```
 
-Ouvre <http://localhost:8080> et entre ton mot de passe.
+Ouvre <http://localhost:8080> : au premier lancement, tu choisis ton mot de passe, puis ton prénom et ta couverture.
 
 Par défaut le journal n'écoute que sur ce PC (`APP_BIND=127.0.0.1`). Pour y accéder depuis ton
 téléphone sur le même Wi-Fi, mets `APP_BIND=0.0.0.0` puis ouvre `http://<ip-du-pc>:8080`.
@@ -92,6 +92,29 @@ téléphone sur le même Wi-Fi, mets `APP_BIND=0.0.0.0` puis ouvre `http://<ip-d
    docker compose --profile https up -d --build
    ```
 4. Ouvre les ports 80 et 443 du pare-feu. Le port 8080 reste limité à `127.0.0.1`.
+5. Récupère le **code d’installation** et ouvre `https://journal.mondomaine.fr` pour choisir ton mot de passe :
+   ```bash
+   docker compose logs app
+   ```
+
+## 🔐 Mot de passe
+
+Le mot de passe est enregistré **en base** (table `settings`), sous forme d’empreinte scrypt : il n’est
+jamais stocké en clair, ni dans la base ni dans `.env`. Le secret qui signe les sessions y est aussi.
+
+- **Premier lancement** : on choisit le mot de passe à l’écran. Si le journal est joignable par d’autres
+  machines (`DOMAIN`, `APP_BIND=0.0.0.0`, `COOKIE_SECURE` ou `TRUST_PROXY`), un **code d’installation**
+  à 6 chiffres est aussi demandé : il s’affiche dans `docker compose logs app`. Sur un journal qui n’écoute
+  que sur ce PC (réglage par défaut), pas de code. `SETUP_CODE=always` ou `never` force l’un ou l’autre.
+- **Changer** : onglet **Paramètres** → « Changer le mot de passe » (l’ancien est demandé). Les autres
+  appareils sont déconnectés.
+- **Mot de passe oublié** : sur la machine qui héberge le journal, puis reconnecte-toi avec le nouveau :
+  ```bash
+  docker compose exec app node src/reset-password.js
+  ```
+- **Anciennes installations** : `APP_PASSWORD` et `SESSION_SECRET` présents dans `.env` sont importés
+  automatiquement au démarrage (une seule fois, sessions ouvertes conservées). Tu peux ensuite retirer
+  ces deux lignes du `.env` : la base fait foi.
 
 ## 💾 Sauvegardes
 
@@ -127,7 +150,10 @@ docker compose start app
 Sans horodatage, `restore.sh` liste les sauvegardes disponibles.
 Sous Git Bash (Windows), préfixe les commandes avec `MSYS_NO_PATHCONV=1`.
 
-Les images supprimées depuis l'appli sont seulement masquées : le fichier reste sur le disque.
+Les images supprimées depuis l'appli sont seulement masquées : le fichier reste sur le disque
+(et dans les sauvegardes). Les pages arrachées sont gardées dans la table `trash`. Tout se
+retrouve dans l'onglet **Corbeille**, qui n'est jamais vidé automatiquement. Un élément effacé pour
+toujours depuis la corbeille reste dans les sauvegardes déjà faites, jusqu'à leur rotation.
 
 ### 🚚 Réinstaller sur un nouveau VPS à partir d'une sauvegarde
 
@@ -135,8 +161,8 @@ Procédure testée sur une installation vierge (base vide, volumes neufs) : text
 et annotations reviennent à l'identique.
 
 1. Sur le nouveau serveur : installe Docker, clone le dépôt, recrée le `.env`.
-   Garde le même `APP_PASSWORD` si tu veux le même mot de passe. Les autres secrets peuvent changer :
-   un nouveau `SESSION_SECRET` demande seulement de se reconnecter.
+   Seul `POSTGRES_PASSWORD` est nécessaire : le mot de passe du journal est dans la sauvegarde
+   (en base), c’est donc **celui de la date de la sauvegarde** qui reviendra.
 2. Copie les deux fichiers d'une même sauvegarde (`db_<date>.dump` et `uploads_<date>.tar.gz`)
    dans le dossier `BACKUP_DIR` (par défaut `./backups`).
 3. Démarre uniquement la base, restaure, puis lance le reste :
@@ -155,7 +181,9 @@ et annotations reviennent à l'identique.
 - **Une panne du serveur lui-même** : par défaut les sauvegardes sont sur le même disque que les données.
   Copie régulièrement `BACKUP_DIR` ailleurs (autre machine, cloud, disque externe), idéalement chiffré :
   c'est un journal intime.
-- **Le fichier `.env`** : il n'est pas sauvegardé (il contient les secrets). Range-le dans un gestionnaire de mots de passe.
+- **Le fichier `.env`** : il n'est pas sauvegardé (il contient `POSTGRES_PASSWORD`). Range-le dans un gestionnaire de mots de passe.
+- **Restaurer une ancienne sauvegarde remet aussi l'ancien mot de passe du journal** (il est en base). En cas
+  d'oubli : `docker compose exec app node src/reset-password.js`.
 - **Les échecs** : une sauvegarde ratée est seulement écrite dans les logs (`docker compose logs backup`) ; aucune alerte n'est envoyée.
 
 ## ✍️ Changer la police

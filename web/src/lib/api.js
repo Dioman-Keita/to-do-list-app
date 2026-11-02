@@ -57,9 +57,19 @@ export const api = {
   saveDrawing: (id, blob) => request('PUT', `/api/media/${id}/drawing`, fileForm(blob, 'dessin.png')),
   updateMedia: (id, patch) => request('PATCH', `/api/media/${id}`, patch),
   deleteMedia: (id) => request('DELETE', `/api/media/${id}`),
+  restoreMedia: (id) => request('POST', `/api/media/${id}/restore`),
+
+  trashPage: (day, page) => request('POST', `/api/days/${day}/trash`, page),
+  listTrash: () => request('GET', '/api/trash'),
+  restoreTrash: (id) => request('POST', `/api/trash/${id}/restore`),
+  deleteTrash: (id) => request('DELETE', `/api/trash/${id}`),
+  deleteMediaForever: (id) => request('DELETE', `/api/media/${id}/forever`),
+  emptyTrash: (pageIds, mediaIds) => request('POST', '/api/trash/empty', { pageIds, mediaIds }),
 
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (settings) => request('PUT', '/api/settings', settings),
+  setupPassword: (body) => request('POST', '/api/setup/password', body),
+  changePassword: (current, next) => request('PUT', '/api/password', { current, next }),
 
   spellcheck: (text) => request('POST', '/api/spellcheck', { text }),
   addWord: (word) => request('POST', '/api/dictionary', { word }),

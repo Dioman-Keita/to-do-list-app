@@ -68,6 +68,20 @@ const MIGRATIONS = [
    INSERT INTO settings (key, value)
      SELECT 'setup_done', 'true'::jsonb
      WHERE EXISTS (SELECT 1 FROM entries) OR EXISTS (SELECT 1 FROM tasks) OR EXISTS (SELECT 1 FROM media);`,
+
+  // Corbeille : les pages arrachées y sont gardées pour toujours (jamais vidée automatiquement).
+  // `content` = les blocs du carnet retirés (JSON TipTap), `block_index` = où les recoller.
+  `CREATE TABLE trash (
+     id serial PRIMARY KEY,
+     day date NOT NULL,
+     kind text NOT NULL DEFAULT 'page',
+     content jsonb NOT NULL,
+     preview text NOT NULL DEFAULT '',
+     block_index integer NOT NULL DEFAULT 0,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     restored_at timestamptz
+   );
+   CREATE INDEX trash_waiting_idx ON trash (created_at) WHERE restored_at IS NULL;`,
 ];
 
 async function waitForDatabase() {

@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Selection } from '@tiptap/pm/state';
 import { api } from '../lib/api.js';
 import {
   Big,
@@ -37,7 +38,7 @@ const nowTime = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', 
  * Techniquement un seul document mis en colonnes CSS (une colonne = une page) : le texte
  * passe tout seul à la page suivante, et on fait glisser la vue de page en page.
  */
-export default function JournalEditor({ content, legacyBody, isToday, status, onChange }) {
+export default function JournalEditor({ day, content, legacyBody, isToday, status, onChange }) {
   const frameRef = useRef(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -48,6 +49,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   const [menu, setMenu] = useState(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [spellOn, setSpellOn] = useState(true);
+  const [tear, setTear] = useState(null); // null | 'ask' | 'busy' | message d'erreur
   const spell = useRef({ timer: null, ignored: new Set() });
   const layout = useRef({ stride: 0, page: 0 });
 
@@ -124,7 +126,8 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   }
 
   // La page affichée suit le curseur (quand on écrit au-delà du bas de la page, on passe à la suivante).
-  function followCaret() {
+  // `force` : aller sur la page du curseur même si elle « touche » la page affichée (nouvelle page).
+  function followCaret(force = false) {
     const editor = live();
     if (!editor) return;
     const el = dom();
@@ -143,8 +146,49 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
         /* position sans rendu (ex. entre deux blocs) */
       }
     }
-    if (!pages.length || pages.includes(layout.current.page)) return;
+    if (!pages.length || (!force && pages.includes(layout.current.page))) return;
     showPage(pages[pages.length - 1]);
+  }
+
+  // Première position du document affichée sur la page p (fin du document au-delà de la dernière).
+  function pageStart(p) {
+    const editor = live();
+    const el = dom();
+    if (!editor || !el) return 0;
+    const { view } = editor;
+    const size = view.state.doc.content.size;
+    if (p <= 0) return 0;
+    const base = el.getBoundingClientRect().left - el.scrollLeft;
+    const at = (pos) => {
+      try {
+        return pageOf(view.coordsAtPos(pos, 1).left - base);
+      } catch {
+        return -1;
+      }
+    };
+    let lo = 0;
+    let hi = size;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (at(mid) >= p) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  }
+
+  // Le navigateur peut faire défiler ce qui entoure le carnet en posant le focus ou la
+  // sélection : on remet tout en place (le carnet ne doit jamais « monter »).
+  function holdStill(fn) {
+    const x = window.scrollX;
+    const y = window.scrollY;
+    const restore = () => {
+      if (window.scrollX !== x || window.scrollY !== y) window.scrollTo(x, y);
+      const el = dom();
+      if (el?.scrollTop) el.scrollTop = 0;
+    };
+    fn();
+    restore();
+    requestAnimationFrame(restore);
   }
 
   // Aller à une page et y placer le curseur (en haut de la page).
@@ -159,7 +203,7 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     const hit = editor.view.posAtCoords({ left: rect.left + 60, top: rect.top + 8 });
     // Ne poser le curseur que s'il tombe bien sur cette page (sinon le carnet le suivrait ailleurs).
     const onPage = hit && pageOf(editor.view.coordsAtPos(hit.pos).left - (rect.left - el.scrollLeft)) === target;
-    if (onPage) editor.chain().focus().setTextSelection(hit.pos).run();
+    if (onPage) holdStill(() => editor.chain().focus().setTextSelection(hit.pos).run());
   }
 
   // Taille d'une page : largeur du cadre, hauteur arrondie à un nombre entier de lignes.
@@ -195,9 +239,24 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
     const snap = () => {
       const want = layout.current.page * layout.current.stride;
       if (Math.abs(el.scrollLeft - want) > 1) el.scrollLeft = want;
+      if (el.scrollTop) el.scrollTop = 0; // jamais de défilement vertical de la feuille
     };
     el.addEventListener('scroll', snap);
     return () => el.removeEventListener('scroll', snap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
+  // Les polices manuscrites arrivent après le premier rendu : le texte se redistribue.
+  useEffect(() => {
+    if (!editor || !document.fonts) return undefined;
+    let alive = true;
+    const again = () => alive && measure();
+    document.fonts.ready.then(again);
+    document.fonts.addEventListener?.('loadingdone', again);
+    return () => {
+      alive = false;
+      document.fonts.removeEventListener?.('loadingdone', again);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
@@ -218,13 +277,88 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
   }
 
   // `atEnd` : bouton « nouvelle page + » du bas, affiché sur la dernière page -> à la fin.
-  // Sinon (barre d'outils, Ctrl+Entrée) : après le bloc où se trouve le curseur.
+  // Sinon (barre d'outils) : après le bloc du curseur s'il est sur la page affichée, sinon à la
+  // fin de la page affichée — jamais au milieu d'une autre page, dont le texte suivrait.
   function newPage(atEnd) {
     const editor = live();
     if (!editor) return;
-    if (atEnd) editor.commands.focus('end');
-    else if (!editor.isFocused) editor.commands.focus();
-    editor.commands.insertPage();
+    holdStill(() => {
+      if (atEnd) editor.commands.focus('end');
+      else if (!caretOnPage(page)) {
+        const { doc } = editor.state;
+        const end = page >= pageCount - 1 ? doc.content.size : Math.max(0, pageStart(page + 1) - 1);
+        editor.view.dispatch(editor.state.tr.setSelection(Selection.near(doc.resolve(end), -1)));
+        editor.commands.focus();
+      }
+      editor.commands.insertPage();
+    });
+    measure();
+    followCaret(true);
+  }
+
+  function caretOnPage(p) {
+    const editor = live();
+    const el = dom();
+    if (!editor || !el || !editor.isFocused) return false;
+    const base = el.getBoundingClientRect().left - el.scrollLeft;
+    try {
+      const { head } = editor.state.selection;
+      return [-1, 1].some((side) => pageOf(editor.view.coordsAtPos(head, side).left - base) === p);
+    } catch {
+      return false;
+    }
+  }
+
+  // Arracher la page affichée : ses blocs partent d'abord à la corbeille (côté serveur),
+  // puis sont retirés du carnet. Une page sans texte est simplement retirée.
+  async function tearPage() {
+    const editor = live();
+    if (!editor) return;
+    const { doc } = editor.state;
+    let from = pageStart(page);
+    let to = page >= pageCount - 1 ? doc.content.size : pageStart(page + 1);
+    // Page qui commence ou finit pile entre deux blocs : on prend les blocs entiers.
+    const $from = doc.resolve(from);
+    if ($from.depth === 1 && $from.parentOffset === 0) from = $from.before(1);
+    const $to = doc.resolve(to);
+    if ($to.depth === 1 && $to.parentOffset === 0) to = $to.before(1);
+    else if ($to.depth === 1 && $to.parentOffset === $to.parent.content.size) to = $to.after(1);
+    // Garder le saut de page de fin quand la page précédente continue sur celle-ci.
+    const isBreak = (n) => n?.type.name === 'pageBreak';
+    if (from > 0 && isBreak(doc.resolve(to).nodeBefore) && !isBreak(doc.resolve(from).nodeBefore)) to -= 1;
+    if (to <= from) return setTear(null);
+
+    const hasText = doc.textBetween(from, to, '\n', ' ').trim().length > 0;
+    setTear('busy');
+    editor.setEditable(false);
+    try {
+      if (hasText) {
+        const $start = doc.resolve(from);
+        await api.trashPage(day, {
+          blocks: doc.slice(from, to).content.toJSON(),
+          blockIndex: $start.index(0) + ($start.depth > 0 ? 1 : 0),
+        });
+      }
+    } catch (err) {
+      if (!editor.isDestroyed) editor.setEditable(true);
+      return setTear(`La page n’a pas pu partir à la corbeille : ${err.message}`);
+    }
+    if (editor.isDestroyed) return;
+    editor.setEditable(true);
+    if (editor.state.doc !== doc) return setTear('Le texte a changé entre-temps, réessaie.');
+    const tr = editor.state.tr.delete(from, to);
+    // Pas de saut de page tout au bout (il laisserait une page sans ligne où écrire).
+    const last = tr.doc.lastChild;
+    if (isBreak(last)) tr.delete(tr.doc.content.size - last.nodeSize, tr.doc.content.size);
+    tr.setSelection(Selection.near(tr.doc.resolve(Math.min(from, tr.doc.content.size)), 1));
+    editor.view.dispatch(tr);
+    const cleanup = dropExtraBlankPages(editor.state);
+    if (cleanup) editor.view.dispatch(cleanup);
+    setTear(null);
+    const el = dom();
+    const count = Math.max(1, Math.round((el.scrollWidth + GAP) / layout.current.stride));
+    showPage(Math.min(page, count - 1));
+    measure();
   }
 
   function jumpToChapter(ch) {
@@ -417,6 +551,19 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
               sommaire ({chapters.length})
             </button>
           )}
+          {(pageCount > 1 || !editor?.isEmpty) && (
+            <button
+              type="button"
+              className="tear-toggle"
+              title="Arracher cette page (elle part à la corbeille)"
+              aria-label="Arracher cette page"
+              aria-expanded={tear === 'ask'}
+              disabled={tear === 'busy'}
+              onClick={() => setTear((t) => (t === 'ask' ? null : 'ask'))}
+            >
+              ✂
+            </button>
+          )}
           {!spellOn && (
             <small className="spell-off" title="LanguageTool ne répond pas : le correcteur du navigateur est utilisé">
               ✎?
@@ -433,6 +580,30 @@ export default function JournalEditor({ content, legacyBody, isToday, status, on
                 </button>
               ))}
             </nav>
+          )}
+          {tear && (
+            <span className="tear-confirm" role="alertdialog" aria-label="Arracher la page">
+              {tear === 'ask' && (
+                <>
+                  Arracher la page {page + 1} ?
+                  <button type="button" className="tear-yes" onClick={tearPage}>
+                    oui, à la corbeille
+                  </button>
+                  <button type="button" onClick={() => setTear(null)}>
+                    non
+                  </button>
+                </>
+              )}
+              {tear === 'busy' && 'je l’arrache…'}
+              {tear !== 'ask' && tear !== 'busy' && (
+                <>
+                  {tear}
+                  <button type="button" onClick={() => setTear(null)}>
+                    ok
+                  </button>
+                </>
+              )}
+            </span>
           )}
         </span>
         <button

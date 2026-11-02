@@ -5,6 +5,7 @@ import { Butterfly, SvgFilters } from './components/Decor.jsx';
 import Journal from './components/Journal.jsx';
 import Login from './components/Login.jsx';
 import Onboarding from './components/Onboarding.jsx';
+import PasswordSetup from './components/PasswordSetup.jsx';
 import { applyCover } from './lib/identity.js';
 
 export default function App() {
@@ -55,7 +56,9 @@ export default function App() {
       <Butterfly />
       <AnimatePresence mode="wait">
         {auth &&
-          (!auth.authed ? (
+          (auth.needsPassword ? (
+            <PasswordSetup key="password" name={auth.name} codeRequired={auth.setupCodeRequired} onDone={refresh} />
+          ) : !auth.authed ? (
             <Login key="login" name={auth.name} onLogin={refresh} />
           ) : auth.needsSetup ? (
             <Onboarding key="onboarding" onDone={applySettings} />
