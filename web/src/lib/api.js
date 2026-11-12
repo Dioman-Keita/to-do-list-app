@@ -35,6 +35,8 @@ export const api = {
   listDays: (from, to) => request('GET', `/api/days?from=${from}&to=${to}`),
   getDay: (day) => request('GET', `/api/days/${day}`),
   saveDay: (day, patch, opts) => request('PUT', `/api/days/${day}`, patch, opts),
+  dayEmpty: (day) => request('GET', `/api/days/${day}/empty`),
+  moveDay: (day, to) => request('POST', `/api/days/${day}/move`, { to }),
 
   addTask: (day, text) => request('POST', `/api/days/${day}/tasks`, { text }),
   updateTask: (id, patch) => request('PATCH', `/api/tasks/${id}`, patch),

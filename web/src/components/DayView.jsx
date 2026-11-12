@@ -26,7 +26,7 @@ const WEATHER = [
   { id: 'brume', emoji: '🌫️', label: 'Brume' },
 ];
 
-export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
+export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey, controlRef }) {
   const [entry, setEntry] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [media, setMedia] = useState([]);
@@ -37,6 +37,7 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   const timer = useRef(null);
   const fileInput = useRef(null);
   const firstLoad = useRef(true);
+  const frozen = useRef(false); // pendant un déplacement : plus aucun enregistrement vers ce jour
 
   useEffect(() => {
     api
@@ -61,7 +62,7 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   async function flush(keepalive = false) {
     clearTimeout(timer.current);
     const patch = pending.current;
-    if (!patch) return;
+    if (!patch || frozen.current) return;
     pending.current = null;
     setStatus('saving');
     try {
@@ -75,12 +76,31 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
 
   // `display: false` : le texte vit dans l'éditeur, inutile de re-rendre la page à chaque frappe.
   function patchEntry(patch, { display = true } = {}) {
+    if (frozen.current) return;
     if (display) setEntry((e) => ({ ...e, ...patch }));
     pending.current = { ...pending.current, ...patch };
     setStatus('dirty');
     clearTimeout(timer.current);
     timer.current = setTimeout(flush, 700);
   }
+
+  // Pour « Déplacer la journée » (Journal.jsx) : tout enregistrer, puis geler ce jour.
+  useEffect(() => {
+    if (!controlRef) return undefined;
+    controlRef.current = {
+      async release() {
+        await flush();
+        if (pending.current) throw new Error('Le texte n’est pas encore enregistré : je ne déplace rien.');
+        frozen.current = true;
+      },
+      thaw() {
+        frozen.current = false;
+      },
+    };
+    return () => {
+      controlRef.current = null;
+    };
+  });
 
   // Ne rien perdre en changeant de page ou en fermant l'onglet.
   useEffect(() => {

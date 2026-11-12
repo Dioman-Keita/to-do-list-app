@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api, mediaUrl } from '../lib/api.js';
 import { addDays, isDayKey, todayKey } from '../lib/date.js';
@@ -9,6 +9,7 @@ import AlbumView from './AlbumView.jsx';
 import CalendarView from './CalendarView.jsx';
 import SettingsView from './SettingsView.jsx';
 import TrashView from './TrashView.jsx';
+import MoveDay from './MoveDay.jsx';
 import MediaViewer from './MediaViewer.jsx';
 import DrawingEditor from './DrawingEditor.jsx';
 
@@ -42,6 +43,11 @@ export default function Journal({ name, onLogout, onSettingsSaved }) {
   const [viewer, setViewer] = useState(null);
   const [editor, setEditor] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [moving, setMoving] = useState(false);
+  const dayControl = useRef(null);
+
+  // Changer de jour ou d'onglet referme « Déplacer ».
+  useEffect(() => setMoving(false), [tab, day]);
 
   useEffect(() => {
     const onHash = () => setRoute(readHash());
@@ -141,6 +147,7 @@ export default function Journal({ name, onLogout, onSettingsSaved }) {
                 {tab === 'jour' && (
                   <DayView
                     day={day}
+                    controlRef={dayControl}
                     {...shared}
                     onNewSketch={() => setEditor({ day, ...NEW_SKETCH })}
                   />
@@ -161,9 +168,29 @@ export default function Journal({ name, onLogout, onSettingsSaved }) {
 
           <div className="notebook-footer">
             {tab === 'jour' ? (
-              <div className="footer-strip footer-left">
-                <button type="button" onClick={() => go('jour', addDays(day, -1))}>← Hier</button>
-                <button type="button" onClick={() => go('jour', addDays(day, 1))}>Demain →</button>
+              <div className="footer-day">
+                <div className="footer-strip footer-left">
+                  <button type="button" onClick={() => go('jour', addDays(day, -1))}>← Hier</button>
+                  <button type="button" onClick={() => go('jour', addDays(day, 1))}>Demain →</button>
+                  <button type="button" className="footer-move" aria-expanded={moving} onClick={() => setMoving((m) => !m)}>
+                    ↪ Déplacer
+                  </button>
+                </div>
+                <AnimatePresence>
+                  {moving && (
+                    <MoveDay
+                      key={day}
+                      day={day}
+                      release={() => dayControl.current?.release() ?? Promise.reject(new Error('La journée n’est pas encore chargée.'))}
+                      thaw={() => dayControl.current?.thaw()}
+                      onClose={() => setMoving(false)}
+                      onMoved={(to) => {
+                        setMoving(false);
+                        go('jour', to);
+                      }}
+                    />
+                  )}
+                </AnimatePresence>
               </div>
             ) : (
               <span />

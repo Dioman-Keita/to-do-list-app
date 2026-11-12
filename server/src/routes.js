@@ -217,6 +217,56 @@ apiRouter.put(
   })
 );
 
+// Une journée « vide » : rien d'écrit (titre, texte, humeurs), aucune tâche, aucune image visible.
+// La météo seule ou un carnet vierge ne comptent pas.
+async function dayIsEmpty(client, day) {
+  const { rows } = await client.query(
+    `SELECT NOT EXISTS (SELECT 1 FROM entries WHERE day = $1
+                          AND (title <> '' OR body <> '' OR content_text ~ '\\S' OR cardinality(moods) > 0))
+        AND NOT EXISTS (SELECT 1 FROM tasks WHERE day = $1)
+        AND NOT EXISTS (SELECT 1 FROM media WHERE day = $1 AND deleted_at IS NULL) AS empty`,
+    [day]
+  );
+  return rows[0].empty;
+}
+
+apiRouter.get(
+  '/days/:day/empty',
+  ah(async (req, res) => res.json({ empty: await dayIsEmpty(pool, parseDay(req.params.day)) }))
+);
+
+// Déplacer une journée écrite au mauvais jour vers une journée vide : tout part ensemble
+// (texte, humeurs, météo, tâches, images, et ce qui en est à la corbeille). Rien n'est effacé.
+apiRouter.post(
+  '/days/:day/move',
+  ah(async (req, res) => {
+    const from = parseDay(req.params.day);
+    const to = parseDay(req.body?.to);
+    if (from === to) throw new HttpError(400, 'C’est déjà ce jour-là');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Un seul déplacement à la fois : deux déplacements croisés ne peuvent pas se mélanger.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('journal:move-day'))");
+      if (await dayIsEmpty(client, from)) throw new HttpError(400, 'Cette journée est vide : rien à déplacer');
+      if (!(await dayIsEmpty(client, to))) throw new HttpError(409, 'Ce jour-là a déjà des choses écrites : je ne mélange pas deux journées');
+      // La journée d'arrivée n'a au plus qu'une ligne vide (météo, carnet vierge) : elle laisse la place.
+      await client.query('DELETE FROM entries WHERE day = $1', [to]);
+      await client.query('UPDATE entries SET day = $2, updated_at = now() WHERE day = $1', [from, to]);
+      const tasks = await client.query('UPDATE tasks SET day = $2 WHERE day = $1', [from, to]);
+      const media = await client.query('UPDATE media SET day = $2, updated_at = now() WHERE day = $1', [from, to]);
+      await client.query('UPDATE trash SET day = $2 WHERE day = $1', [from, to]);
+      await client.query('COMMIT');
+      res.json({ day: to, tasks: tasks.rowCount, media: media.rowCount });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  })
+);
+
 apiRouter.post(
   '/days/:day/tasks',
   ah(async (req, res) => {
