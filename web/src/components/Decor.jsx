@@ -24,7 +24,8 @@ export function SvgFilters() {
 }
 
 // Une page du carnet : papier, aquarelles et éclaboussures propres à `seed`.
-export function Page({ side, seed = 'page', className = '', children }) {
+// `inert` : page visible mais impossible à toucher ni à modifier (clavier compris).
+export function Page({ side, seed = 'page', className = '', inert = false, children }) {
   const decor = useMemo(() => {
     const rnd = seeded(`${seed}-${side}`);
     const blobs = Array.from({ length: 2 + Math.floor(rnd() * 3) }, () => ({
@@ -45,7 +46,7 @@ export function Page({ side, seed = 'page', className = '', children }) {
   }, [seed, side]);
 
   return (
-    <section className={`page page-${side} ${className}`}>
+    <section className={`page page-${side} ${className}`} inert={inert ? '' : undefined}>
       <div className="page-decor" aria-hidden="true">
         {decor.blobs.map((b, i) => (
           <span

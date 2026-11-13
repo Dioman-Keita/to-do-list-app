@@ -16,7 +16,7 @@ async function request(method, url, body, { keepalive = false } = {}) {
     throw new Error('Session expirée');
   }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-  if (!res.ok) throw new Error(data?.error || `Erreur ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data?.error || `Erreur ${res.status}`), { status: res.status });
   return data;
 }
 
@@ -35,6 +35,8 @@ export const api = {
   listDays: (from, to) => request('GET', `/api/days?from=${from}&to=${to}`),
   getDay: (day) => request('GET', `/api/days/${day}`),
   saveDay: (day, patch, opts) => request('PUT', `/api/days/${day}`, patch, opts),
+  dayEmpty: (day) => request('GET', `/api/days/${day}/empty`),
+  moveDay: (day, to) => request('POST', `/api/days/${day}/move`, { to }),
 
   addTask: (day, text) => request('POST', `/api/days/${day}/tasks`, { text }),
   updateTask: (id, patch) => request('PATCH', `/api/tasks/${id}`, patch),

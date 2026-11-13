@@ -26,7 +26,7 @@ const WEATHER = [
   { id: 'brume', emoji: '🌫️', label: 'Brume' },
 ];
 
-export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
+export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey, controlRef }) {
   const [entry, setEntry] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [media, setMedia] = useState([]);
@@ -37,6 +37,10 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   const timer = useRef(null);
   const fileInput = useRef(null);
   const firstLoad = useRef(true);
+  const frozen = useRef(false); // pendant un déplacement : plus aucun enregistrement vers ce jour
+  const saves = useRef(new Set()); // enregistrements en cours
+  const uploads = useRef(0); // photos en cours d'envoi (ou en file d'attente)
+  const [locked, setLocked] = useState(false); // journée intouchable pendant un déplacement
 
   useEffect(() => {
     api
@@ -61,26 +65,61 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
   async function flush(keepalive = false) {
     clearTimeout(timer.current);
     const patch = pending.current;
-    if (!patch) return;
+    if (!patch || frozen.current) return;
     pending.current = null;
     setStatus('saving');
-    try {
-      await api.saveDay(day, patch, { keepalive });
-      setStatus('saved');
-    } catch {
-      pending.current = { ...patch, ...pending.current };
-      setStatus('error');
-    }
+    const save = api.saveDay(day, patch, { keepalive }).then(
+      () => setStatus('saved'),
+      () => {
+        // Échec : le morceau revient en attente (et bloque un déplacement).
+        pending.current = { ...patch, ...pending.current };
+        setStatus('error');
+      }
+    );
+    saves.current.add(save);
+    await save;
+    saves.current.delete(save);
   }
 
   // `display: false` : le texte vit dans l'éditeur, inutile de re-rendre la page à chaque frappe.
   function patchEntry(patch, { display = true } = {}) {
+    if (frozen.current) return;
     if (display) setEntry((e) => ({ ...e, ...patch }));
     pending.current = { ...pending.current, ...patch };
     setStatus('dirty');
     clearTimeout(timer.current);
     timer.current = setTimeout(flush, 700);
   }
+
+  // Pour « Déplacer la journée » (Journal.jsx) : rendre la journée intouchable, attendre que tout
+  // soit enregistré (y compris un enregistrement déjà parti), puis geler ce jour.
+  useEffect(() => {
+    if (!controlRef) return undefined;
+    controlRef.current = {
+      async release() {
+        setLocked(true);
+        try {
+          for (let round = 0; round < 3 && (pending.current || saves.current.size); round++) {
+            await Promise.all([...saves.current]);
+            await flush();
+          }
+          if (pending.current || saves.current.size) throw new Error('Le texte n’est pas encore enregistré : je ne déplace rien.');
+          if (uploads.current) throw new Error('Des photos sont encore en train d’arriver : attends la fin avant de déplacer.');
+          frozen.current = true;
+        } catch (err) {
+          setLocked(false);
+          throw err;
+        }
+      },
+      thaw() {
+        frozen.current = false;
+        setLocked(false);
+      },
+    };
+    return () => {
+      controlRef.current = null;
+    };
+  });
 
   // Ne rien perdre en changeant de page ou en fermant l'onglet.
   useEffect(() => {
@@ -95,7 +134,8 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
 
   async function uploadFiles(files) {
     const list = [...files].filter((f) => f.type.startsWith('image/'));
-    if (!list.length) return;
+    if (!list.length || frozen.current) return;
+    uploads.current += list.length;
     setUploading((n) => n + list.length);
     for (const file of list) {
       try {
@@ -104,6 +144,7 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
       } catch (err) {
         setError(`${file.name} : ${err.message}`);
       } finally {
+        uploads.current -= 1;
         setUploading((n) => n - 1);
       }
     }
@@ -118,7 +159,7 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
 
   return (
     <>
-      <Page side="left" seed={day} className="page-writing">
+      <Page side="left" seed={day} className="page-writing" inert={locked}>
         <header className="day-header">
           <TornLabel tilt={-2}>
             <span className="day-weekday">{weekday(day)}</span>
@@ -157,7 +198,7 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey }) {
         />
       </Page>
 
-      <Page side="right" seed={day}>
+      <Page side="right" seed={day} inert={locked}>
         <TaskList day={day} tasks={tasks} setTasks={setTasks} />
 
         <div className="memories-head">

@@ -104,6 +104,7 @@ derniers créent des lignes manquantes ou pointillées à certains zooms.
 | `.footer-strip` | `styles.css` | Navigation sous le carnet (jamais par-dessus les pages) |
 | `.fmt-bar` / `.fmt` | `JournalEditor.jsx` | Barre de mise en forme du carnet |
 | `.spell-menu`, `.toc`, `.tear-confirm` | `styles.css` | Petits menus flottants : papier, bord encré, ombre décalée. Une confirmation (« Arracher la page 2 ? ») est un de ces bouts de papier au-dessus du pager, jamais une boîte de dialogue |
+| `.move-day` | `MoveDay.jsx` | Bout de papier scotché au-dessus de la bande du bas : choisir un jour (champ date souligné à l'encre), statut en direct, « annuler » / « Déplacer la journée » |
 | `.trash-scrap` | `TrashView.jsx` | Page arrachée dans la corbeille : `.torn` légèrement penché, aperçu sur 3 lignes, « Recoller » |
 | `.trash-polaroid` | `TrashView.jsx` | Image retirée : polaroïd délavé (gris sépia), bouton « Remettre » |
 | `CoverPreview`, `CoverChooser` | `IdentityForm.jsx` | Aperçu et choix de couverture |
