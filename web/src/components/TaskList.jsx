@@ -1,8 +1,41 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../lib/api.js';
 
+export const TASK_MAX = 1000;
+const LINE = 34; // interligne du bout de papier (à garder égal au CSS)
+
+// Une tâche est une seule phrase : les retours à la ligne collés deviennent des espaces.
+const oneLine = (text) => text.replace(/\s*\n\s*/g, ' ');
+
+// Champ qui passe à la ligne et grandit d'une ligne du papier à la fois.
+function fit(el) {
+  if (!el) return;
+  el.style.height = '0px';
+  el.style.height = `${Math.max(1, Math.round(el.scrollHeight / LINE)) * LINE}px`;
+}
+
+function TaskField({ value, onChange, className, ...props }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => fit(ref.current));
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      maxLength={TASK_MAX}
+      className={className}
+      value={value}
+      onChange={(e) => {
+        onChange(oneLine(e.target.value));
+        fit(e.target);
+      }}
+      {...props}
+    />
+  );
+}
+
 // La liste "À faire" (héritée de l'ancienne to-do list), version bout de papier scotché.
+// Les tâches longues passent à la ligne, sur les lignes du papier.
 export default function TaskList({ day, tasks, setTasks }) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -80,33 +113,11 @@ export default function TaskList({ day, tasks, setTasks }) {
                 </svg>
               </button>
               <span className="task-text-wrap">
-                <input
-                  // La clé suit le texte : si l'enregistrement échoue, le champ se remonte avec l'ancien texte.
-                  key={task.text}
-                  className="task-text"
-                  defaultValue={task.text}
-                  aria-label="Tâche"
-                  onBlur={(e) => {
-                    const text = e.target.value.trim();
-                    if (text && text !== task.text) update(task, { text });
-                    else e.target.value = task.text;
-                  }}
-                  onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                />
-                {/* Copie invisible du texte : donne à la rature la largeur exacte des mots. */}
+                {/* La clé suit le texte : si l'enregistrement échoue, le champ revient à l'ancien texte. */}
+                <TaskText key={task.text} task={task} onSave={(text) => update(task, { text })} />
+                {/* Copie invisible du texte, posée sur le champ : la rature suit chaque ligne écrite. */}
                 <span className="task-measure" aria-hidden="true">
-                  {task.text}
-                <motion.svg className="strike" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
-                  <motion.path
-                    d="M1 6 C 20 3, 40 8, 60 4 S 90 6, 99 4"
-                    fill="none"
-                    stroke="#33302b"
-                    strokeWidth="1.6"
-                    initial={false}
-                    animate={{ pathLength: task.done ? 1 : 0 }}
-                    transition={{ duration: 0.4 }}
-                  />
-                </motion.svg>
+                  <span className="task-ink">{task.text}</span>
                 </span>
               </span>
               <button type="button" className="task-delete" aria-label="Supprimer" onClick={() => remove(task)}>
@@ -118,7 +129,16 @@ export default function TaskList({ day, tasks, setTasks }) {
       </ul>
       <form onSubmit={add} className="task-add">
         <span aria-hidden="true">+</span>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="ajouter une tâche…" maxLength={200} />
+        <TaskField
+          className="task-add-text"
+          value={draft}
+          onChange={setDraft}
+          placeholder="ajouter une tâche…"
+          aria-label="Nouvelle tâche"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') add(e); // Entrée ajoute la tâche ; le texte long passe à la ligne tout seul
+          }}
+        />
       </form>
       {error && (
         <p className="form-error" role="alert">
@@ -126,5 +146,33 @@ export default function TaskList({ day, tasks, setTasks }) {
         </p>
       )}
     </motion.div>
+  );
+}
+
+// Texte d'une tâche existante : modifiable sur place, enregistré en quittant le champ (ou Entrée).
+function TaskText({ task, onSave }) {
+  const [text, setText] = useState(task.text);
+  return (
+    <TaskField
+      className="task-text"
+      value={text}
+      onChange={setText}
+      aria-label="Tâche"
+      onBlur={() => {
+        const next = text.trim();
+        if (next && next !== task.text) onSave(next);
+        else setText(task.text);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+          setText(task.text);
+          requestAnimationFrame(() => document.activeElement?.blur());
+        }
+      }}
+    />
   );
 }

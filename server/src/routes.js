@@ -37,6 +37,10 @@ function parseId(value) {
   return id;
 }
 
+// Texte d'une tâche : une seule phrase (les retours à la ligne deviennent des espaces), 1000 caractères max.
+const TASK_MAX = 1000;
+const oneLine = (value) => String(value ?? '').replace(/\s*\n\s*/g, ' ').trim().slice(0, TASK_MAX);
+
 const randomTilt = () => Math.round((Math.random() * 8 - 4) * 10) / 10;
 
 async function writeFile(name, buffer) {
@@ -300,7 +304,7 @@ apiRouter.post(
   '/days/:day/tasks',
   ah(async (req, res) => {
     const day = parseDay(req.params.day);
-    const text = String(req.body?.text || '').trim();
+    const text = oneLine(req.body?.text);
     if (!text) throw new HttpError(400, 'Tâche vide');
     const { rows } = await dayWrite((c) =>
       c.query(
@@ -322,7 +326,7 @@ apiRouter.patch(
     const { rows } = await pool.query(
       `UPDATE tasks SET text = coalesce($2, text), done = coalesce($3, done)
        WHERE id = $1 RETURNING id, day, text, done, position`,
-      [id, typeof text === 'string' && text.trim() ? text.trim() : null, typeof done === 'boolean' ? done : null]
+      [id, typeof text === 'string' && oneLine(text) ? oneLine(text) : null, typeof done === 'boolean' ? done : null]
     );
     if (!rows[0]) throw new HttpError(404, 'Introuvable');
     res.json(rows[0]);

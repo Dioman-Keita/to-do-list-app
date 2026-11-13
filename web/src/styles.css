@@ -492,7 +492,7 @@ button:disabled {
 
 .tasks li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 34px;
 }
@@ -501,6 +501,7 @@ button:disabled {
   flex: none;
   width: 26px;
   height: 26px;
+  margin-top: 4px; /* centrée sur la première ligne */
   padding: 0;
   border: 0;
   background: none;
@@ -516,20 +517,28 @@ button:disabled {
   position: relative;
   flex: 1;
   min-width: 0;
-  height: 34px;
 }
 
-.task-text {
-  position: absolute;
-  inset: 0;
+/* Tâches : champs qui passent à la ligne, une ligne de texte = une ligne du papier (34 px). */
+.task-text,
+.task-add-text {
+  display: block;
   width: 100%;
+  height: 34px;
   border: 0;
   background: transparent;
+  font: inherit;
   font-size: 21px;
+  line-height: 34px;
   padding: 0;
+  color: inherit;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-.task-text:focus {
+.task-text:focus,
+.task-add-text:focus {
   outline: none;
 }
 
@@ -537,26 +546,29 @@ li.done .task-text {
   color: var(--ink-soft);
 }
 
+/* Copie du texte posée exactement sur le champ ; seule la rature y est visible. */
 .task-measure {
-  display: inline-block;
-  position: relative;
-  max-width: 100%;
+  position: absolute;
+  inset: 0;
   font-size: 21px;
   line-height: 34px;
-  white-space: pre;
-  overflow: hidden;
-  visibility: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: transparent;
+  pointer-events: none;
 }
 
-.strike {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 100%;
-  visibility: visible;
-  height: 10px;
-  transform: translateY(-40%);
-  pointer-events: none;
+/* Rature au stylo, ligne par ligne (box-decoration-break : chaque ligne a sa rature). */
+.task-ink {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 10' preserveAspectRatio='none'%3E%3Cpath d='M1 6 C 20 3, 40 8, 60 4 S 90 6, 99 4' fill='none' stroke='%2333302b' stroke-width='1.6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E")
+    no-repeat 0 56% / 0% 10px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-size 0.4s ease-out;
+}
+
+li.done .task-ink {
+  background-size: 100% 10px;
 }
 
 .task-delete {
@@ -582,21 +594,15 @@ li.done .task-text {
 
 .task-add {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-height: 34px;
+  line-height: 34px;
   color: var(--ink-soft);
 }
 
-.task-add input {
+.task-add-text {
   flex: 1;
-  border: 0;
-  background: transparent;
-  font-size: 21px;
-}
-
-.task-add input:focus {
-  outline: none;
 }
 
 .memories-head {
