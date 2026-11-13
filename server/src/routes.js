@@ -86,6 +86,28 @@ async function findMedia(id) {
   return rows[0];
 }
 
+// Verrou du déplacement de journée. Toute écriture qui peut remplir une journée (texte, tâche,
+// image, corbeille) le prend en partagé : les écritures ne se bloquent pas entre elles, mais un
+// déplacement (verrou exclusif) attend qu'elles finissent et les fait attendre à son tour. Ainsi la
+// vérification « le jour d'arrivée est vide » reste vraie jusqu'à la fin du déplacement.
+const MOVE_LOCK = "hashtext('journal:move-day')";
+
+async function dayWrite(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_xact_lock_shared(${MOVE_LOCK})`);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ---- Personnalisation du journal ----
 export const COVERS = ['nuit', 'aube', 'foret', 'tempete', 'phare'];
 
@@ -207,11 +229,13 @@ apiRouter.put(
     const cols = fields.join(', ');
     const params = fields.map((f, i) => `$${i + 2}${cast[f] || ''}`).join(', ');
     const updates = fields.map((f) => `${f} = EXCLUDED.${f}`).join(', ');
-    const { rows } = await pool.query(
-      `INSERT INTO entries (day, ${cols}) VALUES ($1, ${params})
-       ON CONFLICT (day) DO UPDATE SET ${updates}, updated_at = now()
-       RETURNING ${ENTRY_COLS}`,
-      [day, ...values]
+    const { rows } = await dayWrite((c) =>
+      c.query(
+        `INSERT INTO entries (day, ${cols}) VALUES ($1, ${params})
+         ON CONFLICT (day) DO UPDATE SET ${updates}, updated_at = now()
+         RETURNING ${ENTRY_COLS}`,
+        [day, ...values]
+      )
     );
     res.json(rows[0]);
   })
@@ -246,12 +270,17 @@ apiRouter.post(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Un seul déplacement à la fois : deux déplacements croisés ne peuvent pas se mélanger.
-      await client.query("SELECT pg_advisory_xact_lock(hashtext('journal:move-day'))");
+      // Exclusif : ni autre déplacement ni écriture sur une journée pendant ce temps (voir dayWrite).
+      await client.query(`SELECT pg_advisory_xact_lock(${MOVE_LOCK})`);
       if (await dayIsEmpty(client, from)) throw new HttpError(400, 'Cette journée est vide : rien à déplacer');
       if (!(await dayIsEmpty(client, to))) throw new HttpError(409, 'Ce jour-là a déjà des choses écrites : je ne mélange pas deux journées');
       // La journée d'arrivée n'a au plus qu'une ligne vide (météo, carnet vierge) : elle laisse la place.
-      await client.query('DELETE FROM entries WHERE day = $1', [to]);
+      // Les conditions sont répétées : jamais une ligne écrite n'est effacée ici.
+      await client.query(
+        `DELETE FROM entries WHERE day = $1
+           AND title = '' AND body = '' AND content_text !~ '\\S' AND cardinality(moods) = 0`,
+        [to]
+      );
       await client.query('UPDATE entries SET day = $2, updated_at = now() WHERE day = $1', [from, to]);
       const tasks = await client.query('UPDATE tasks SET day = $2 WHERE day = $1', [from, to]);
       const media = await client.query('UPDATE media SET day = $2, updated_at = now() WHERE day = $1', [from, to]);
@@ -273,11 +302,13 @@ apiRouter.post(
     const day = parseDay(req.params.day);
     const text = String(req.body?.text || '').trim();
     if (!text) throw new HttpError(400, 'Tâche vide');
-    const { rows } = await pool.query(
-      `INSERT INTO tasks (day, text, position)
-       VALUES ($1, $2, (SELECT coalesce(max(position), 0) + 1 FROM tasks WHERE day = $1))
-       RETURNING id, day, text, done, position`,
-      [day, text]
+    const { rows } = await dayWrite((c) =>
+      c.query(
+        `INSERT INTO tasks (day, text, position)
+         VALUES ($1, $2, (SELECT coalesce(max(position), 0) + 1 FROM tasks WHERE day = $1))
+         RETURNING id, day, text, done, position`,
+        [day, text]
+      )
     );
     res.status(201).json(rows[0]);
   })
@@ -341,10 +372,12 @@ apiRouter.post(
     const kind = req.body?.kind === 'sketch' ? 'sketch' : 'photo';
     if (!req.file) throw new HttpError(400, 'Aucun fichier');
     const stored = kind === 'photo' ? await storePhoto(req.file.buffer) : await storeDrawing(req.file.buffer, true);
-    const { rows } = await pool.query(
-      `INSERT INTO media (day, kind, file, thumb, width, height, tilt, caption)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${MEDIA_COLS}`,
-      [day, kind, stored.file, stored.thumb, stored.width, stored.height, randomTilt(), String(req.body?.caption || '')]
+    const { rows } = await dayWrite((c) =>
+      c.query(
+        `INSERT INTO media (day, kind, file, thumb, width, height, tilt, caption)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${MEDIA_COLS}`,
+        [day, kind, stored.file, stored.thumb, stored.width, stored.height, randomTilt(), String(req.body?.caption || '')]
+      )
     );
     res.status(201).json(rows[0]);
   })
@@ -383,10 +416,12 @@ apiRouter.patch(
   ah(async (req, res) => {
     const id = parseId(req.params.id);
     const { caption, day } = req.body || {};
-    const { rows } = await pool.query(
-      `UPDATE media SET caption = coalesce($2, caption), day = coalesce($3, day), updated_at = now()
-       WHERE id = $1 AND deleted_at IS NULL RETURNING ${MEDIA_COLS}`,
-      [id, typeof caption === 'string' ? caption.slice(0, 200) : null, day ? parseDay(day) : null]
+    const { rows } = await dayWrite((c) =>
+      c.query(
+        `UPDATE media SET caption = coalesce($2, caption), day = coalesce($3, day), updated_at = now()
+         WHERE id = $1 AND deleted_at IS NULL RETURNING ${MEDIA_COLS}`,
+        [id, typeof caption === 'string' ? caption.slice(0, 200) : null, day ? parseDay(day) : null]
+      )
     );
     if (!rows[0]) throw new HttpError(404, 'Introuvable');
     res.json(rows[0]);
@@ -474,10 +509,12 @@ apiRouter.post(
     }
     const preview = docText({ type: 'doc', content: blocks }).replace(/\s+/g, ' ').trim().slice(0, 280);
     const index = Number.isInteger(blockIndex) && blockIndex >= 0 ? blockIndex : 0;
-    const { rows } = await pool.query(
-      `INSERT INTO trash (day, content, preview, block_index) VALUES ($1, $2::jsonb, $3, $4)
-       RETURNING id, day, preview, created_at`,
-      [day, JSON.stringify(blocks), preview, index]
+    const { rows } = await dayWrite((c) =>
+      c.query(
+        `INSERT INTO trash (day, content, preview, block_index) VALUES ($1, $2::jsonb, $3, $4)
+         RETURNING id, day, preview, created_at`,
+        [day, JSON.stringify(blocks), preview, index]
+      )
     );
     res.status(201).json(rows[0]);
   })
@@ -504,6 +541,7 @@ apiRouter.post(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query(`SELECT pg_advisory_xact_lock_shared(${MOVE_LOCK})`);
       const { rows } = await client.query('SELECT * FROM trash WHERE id = $1 AND restored_at IS NULL FOR UPDATE', [id]);
       const item = rows[0];
       if (!item) throw new HttpError(404, 'Déjà recollée ou introuvable');
@@ -582,9 +620,11 @@ apiRouter.post(
 apiRouter.post(
   '/media/:id/restore',
   ah(async (req, res) => {
-    const { rows } = await pool.query(
-      `UPDATE media SET deleted_at = NULL, updated_at = now() WHERE id = $1 AND deleted_at IS NOT NULL RETURNING ${MEDIA_COLS}`,
-      [parseId(req.params.id)]
+    const { rows } = await dayWrite((c) =>
+      c.query(
+        `UPDATE media SET deleted_at = NULL, updated_at = now() WHERE id = $1 AND deleted_at IS NOT NULL RETURNING ${MEDIA_COLS}`,
+        [parseId(req.params.id)]
+      )
     );
     if (!rows[0]) throw new HttpError(404, 'Déjà remise ou introuvable');
     res.json(rows[0]);

@@ -181,8 +181,7 @@ export default function Journal({ name, onLogout, onSettingsSaved }) {
                     <MoveDay
                       key={day}
                       day={day}
-                      release={() => dayControl.current?.release() ?? Promise.reject(new Error('La journée n’est pas encore chargée.'))}
-                      thaw={() => dayControl.current?.thaw()}
+                      control={() => dayControl.current}
                       onClose={() => setMoving(false)}
                       onMoved={(to) => {
                         setMoving(false);

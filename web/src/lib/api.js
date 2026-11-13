@@ -16,7 +16,7 @@ async function request(method, url, body, { keepalive = false } = {}) {
     throw new Error('Session expirée');
   }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-  if (!res.ok) throw new Error(data?.error || `Erreur ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data?.error || `Erreur ${res.status}`), { status: res.status });
   return data;
 }
 

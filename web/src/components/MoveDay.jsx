@@ -4,9 +4,9 @@ import { api } from '../lib/api.js';
 import { addDays, longDate, weekday } from '../lib/date.js';
 
 // « Ce n'était pas le bon jour » : déplacer toute la journée vers un jour encore vide.
-// `release` enregistre ce qui est en cours d'écriture et bloque les nouveaux enregistrements
-// (sinon le texte arrivé après coup recréerait la journée de départ) ; `thaw` les débloque.
-export default function MoveDay({ day, release, thaw, onMoved, onClose }) {
+// `control()` donne la journée affichée : `release` enregistre ce qui est en cours et la gèle
+// (sinon un enregistrement tardif recréerait la journée de départ), `thaw` la dégèle.
+export default function MoveDay({ day, control, onMoved, onClose }) {
   const [to, setTo] = useState(addDays(day, -1));
   const [empty, setEmpty] = useState(null); // null = je regarde, true / false
   const [busy, setBusy] = useState(false);
@@ -33,15 +33,35 @@ export default function MoveDay({ day, release, thaw, onMoved, onClose }) {
   }, [busy, onClose]);
 
   async function move() {
+    // La journée gelée par CE déplacement : c'est elle, et seulement elle, qu'on dégèlera.
+    const released = control();
+    if (!released) return setError('La journée n’est pas encore chargée.');
     setBusy(true);
     setError('');
     try {
-      await release();
-      await api.moveDay(day, to);
-      onMoved(to);
+      await released.release();
     } catch (err) {
-      thaw();
       setError(err.message);
+      return setBusy(false);
+    }
+    try {
+      await api.moveDay(day, to);
+      return onMoved(to);
+    } catch (err) {
+      if (err.status) {
+        // Refus certain du serveur : rien n'a bougé.
+        released.thaw();
+        setError(err.message);
+        return setBusy(false);
+      }
+      // Réponse perdue (réseau) : on regarde où est la journée avant de rien débloquer.
+      try {
+        if ((await api.dayEmpty(day)).empty) return onMoved(to);
+        released.thaw();
+        setError(`Le déplacement n’a pas eu lieu (${err.message}). Réessaie.`);
+      } catch {
+        setError('Je ne sais pas si la journée a été déplacée : recharge la page pour vérifier.');
+      }
       setBusy(false);
     }
   }
