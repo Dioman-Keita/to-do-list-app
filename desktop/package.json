@@ -1,8 +1,8 @@
 {
   "name": "journal-desktop",
   "productName": "Journal",
-  "version": "1.0.0",
-  "description": "Le journal aquarelle dans sa propre fenêtre Windows",
+  "version": "2.0.0",
+  "description": "Le journal aquarelle dans sa propre fenêtre Windows, sans Docker",
   "author": "Dioman Keita",
   "private": true,
   "main": "main.js",
@@ -39,6 +39,24 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Journal"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "../server/src",
+        "to": "server/src"
+      },
+      {
+        "from": "../server/node_modules",
+        "to": "server/node_modules"
+      },
+      {
+        "from": "../server/package.json",
+        "to": "server/package.json"
+      },
+      {
+        "from": "../web/dist",
+        "to": "web"
+      }
+    ]
   }
 }

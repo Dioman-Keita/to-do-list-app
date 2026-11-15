@@ -26,29 +26,26 @@
 
       <form id="form" hidden>
         <p class="intro">Où se trouve ton journal&nbsp;?</p>
-        <label class="field">
-          <span>Adresse du journal</span>
-          <input id="url" type="url" required placeholder="http://localhost:8080" spellcheck="false" />
-          <small>Sur ce PC : <code>http://localhost:8080</code>. Sur un VPS : <code>https://journal.mondomaine.fr</code></small>
+        <label class="check">
+          <input type="radio" name="mode" id="mode-local" value="local" checked />
+          <span><b>Sur cet ordinateur</b> (recommandé) : tout est dans l’application, rien d’autre à installer</span>
         </label>
         <label class="check">
-          <input id="local" type="checkbox" />
-          <span>Le journal tourne sur ce PC avec Docker : le démarrer tout seul s’il dort</span>
+          <input type="radio" name="mode" id="mode-remote" value="remote" />
+          <span><b>Sur un serveur</b> (VPS, ou l’ancien journal Docker)</span>
         </label>
-        <div id="local-box" class="field" hidden>
-          <span>Dossier du journal (celui qui contient <code>docker-compose.yml</code>)</span>
-          <div class="folder">
-            <input id="dir" readonly placeholder="aucun dossier choisi" />
-            <button type="button" id="pick" class="link">Choisir…</button>
-          </div>
-        </div>
+        <label class="field" id="url-box" hidden>
+          <span>Adresse du journal</span>
+          <input id="url" type="url" placeholder="https://journal.mondomaine.fr" spellcheck="false" />
+          <small>Par exemple <code>https://journal.mondomaine.fr</code> ou <code>http://localhost:8080</code></small>
+        </label>
         <label class="check" id="autostart-box">
           <input id="autostart" type="checkbox" />
           <span>Ouvrir le journal au démarrage de Windows</span>
         </label>
         <p id="form-status" role="status"></p>
         <div class="actions">
-          <button type="button" id="test" class="link">Tester</button>
+          <button type="button" id="test" class="link" hidden>Tester</button>
           <button type="submit" class="sticker">Ouvrir mon journal →</button>
         </div>
       </form>

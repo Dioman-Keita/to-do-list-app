@@ -115,11 +115,39 @@ if (fs.existsSync(publicDir)) {
 app.use('/api', (req, res) => res.status(404).json({ error: 'Introuvable' }));
 app.use(errorHandler);
 
-await migrate();
-await initAuth();
-startAutoBackups();
-const port = Number(process.env.PORT) || 3000;
-const host = process.env.HOST || undefined; // l'application de bureau n'écoute que sur 127.0.0.1
-export const server = app.listen(port, host, () =>
-  console.log(`Journal prêt sur http://localhost:${port} (base ${engine === 'embedded' ? `embarquée : ${DATA_DIR}` : 'PostgreSQL'})`)
-);
+function listen(port, host) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, host);
+    server.once('listening', () => resolve(server));
+    server.once('error', reject);
+  });
+}
+
+let running = null;
+
+// Démarre le journal. `portFallback` : si le port est pris (l'ancien journal Docker tourne encore,
+// par exemple), essayer les suivants. Renvoie le port réellement utilisé.
+export async function start({ port = Number(process.env.PORT) || 3000, host = process.env.HOST || undefined, portFallback = 0 } = {}) {
+  await migrate();
+  await initAuth();
+  startAutoBackups();
+  for (let p = port; ; p++) {
+    try {
+      running = await listen(p, host);
+      console.log(`Journal prêt sur http://localhost:${p} (base ${engine === 'embedded' ? `embarquée : ${DATA_DIR}` : 'PostgreSQL'})`);
+      return p;
+    } catch (err) {
+      if (err.code !== 'EADDRINUSE' || p >= port + portFallback) throw err;
+      console.log(`Port ${p} déjà utilisé, j'essaie ${p + 1}`);
+    }
+  }
+}
+
+// Arrêt propre (application de bureau) : la base embarquée est refermée correctement.
+export async function stop() {
+  await new Promise((resolve) => (running ? running.close(() => resolve()) : resolve()));
+  await pool.end();
+}
+
+// Lancé directement (`node src/index.js`, Docker) plutôt qu'importé par l'application de bureau.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await start();
