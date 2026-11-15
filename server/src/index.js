@@ -2,8 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { authStatus, changePassword, initAuth, isAuthed, login, logout, requireAuth, setupPassword } from './auth.js';
-import { migrate, pool } from './db.js';
+import multer from 'multer';
+import {
+  authStatus,
+  changePassword,
+  firstLaunchProblem,
+  initAuth,
+  isAuthed,
+  login,
+  logout,
+  refreshAuth,
+  requireAuth,
+  setupPassword,
+} from './auth.js';
+import { isPristine, restoreBackup, RestoreError, startAutoBackups } from './backup.js';
+import { DATA_DIR, engine, migrate, pool } from './db.js';
 import { apiRouter, errorHandler, readSettings, serveMedia } from './routes.js';
 
 const app = express();
@@ -28,11 +41,14 @@ app.get('/api/me', async (req, res, next) => {
   try {
     const s = await readSettings();
     const authed = await isAuthed(req);
+    const status = await authStatus();
     res.json({
       authed,
       name: s.title || process.env.JOURNAL_NAME || 'Mon journal',
       cover: s.cover,
-      ...(await authStatus()),
+      ...status,
+      // Journal tout neuf : on propose de repartir d'une sauvegarde.
+      ...(status.needsPassword && { canRestore: await isPristine() }),
       ...(authed && { ownerName: s.ownerName, needsSetup: !s.setupDone }),
     });
   } catch (err) {
@@ -41,6 +57,37 @@ app.get('/api/me', async (req, res, next) => {
 });
 app.post('/api/login', login);
 app.post('/api/setup/password', setupPassword);
+
+// Premier lancement : repartir d'une sauvegarde (.zip). Fermé dès que le journal a des données
+// ou un mot de passe ; code d'installation exigé si le journal est joignable d'ailleurs.
+const restoreUpload = multer({ dest: path.join(DATA_DIR, 'tmp'), limits: { fileSize: 20 * 1024 ** 3 } });
+app.post(
+  '/api/restore',
+  async (req, res, next) => {
+    try {
+      if (!(await isPristine())) return res.status(409).json({ error: 'Ce journal contient déjà des données.' });
+      next();
+    } catch (err) {
+      next(err);
+    }
+  },
+  restoreUpload.single('file'),
+  async (req, res, next) => {
+    try {
+      const refused = firstLaunchProblem(req, req.body?.code);
+      if (refused) return res.status(refused.status).json({ error: refused.error });
+      if (!req.file) return res.status(400).json({ error: 'Aucun fichier' });
+      const manifest = await restoreBackup(req.file.path);
+      await refreshAuth();
+      res.json({ restored: true, created: manifest.created, counts: manifest.counts });
+    } catch (err) {
+      if (err instanceof RestoreError) return res.status(400).json({ error: err.message });
+      next(err);
+    } finally {
+      if (req.file) fs.rm(req.file.path, { force: true }, () => {});
+    }
+  }
+);
 app.put('/api/password', requireAuth, changePassword);
 app.post('/api/logout', logout);
 app.use('/api', requireAuth, apiRouter);
@@ -70,5 +117,9 @@ app.use(errorHandler);
 
 await migrate();
 await initAuth();
+startAutoBackups();
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => console.log(`Journal prêt sur http://localhost:${port}`));
+const host = process.env.HOST || undefined; // l'application de bureau n'écoute que sur 127.0.0.1
+export const server = app.listen(port, host, () =>
+  console.log(`Journal prêt sur http://localhost:${port} (base ${engine === 'embedded' ? `embarquée : ${DATA_DIR}` : 'PostgreSQL'})`)
+);

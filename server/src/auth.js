@@ -228,17 +228,34 @@ export function logout(req, res) {
   res.json({ ok: true });
 }
 
+// Premier lancement (mot de passe, restauration d'une sauvegarde) : limite des essais et code
+// d'installation quand le journal est joignable par d'autres machines. Renvoie la réponse
+// d'erreur à donner, ou null si tout va bien.
+export function firstLaunchProblem(req, code) {
+  if (tooManyAttempts(req)) return { status: 429, error: 'Trop de tentatives, réessaie dans quelques minutes.' };
+  if (!setupCodeRequired()) return null;
+  const given = Buffer.from(String(code ?? '').replace(/\s/g, ''));
+  const expected = Buffer.from(state.setupCode || '');
+  if (!state.setupCode || given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+    recordFailure(req);
+    return { status: 403, error: 'Code d’installation incorrect. Il est affiché dans les journaux du serveur.' };
+  }
+  return null;
+}
+
+// Après une restauration : le secret des sessions et le mot de passe sont ceux de la sauvegarde.
+export async function refreshAuth() {
+  const s = await readKeys();
+  if (s.session_secret) state.secret = s.session_secret;
+  else await upsert(pool, 'session_secret', state.secret);
+  state.setupCode = null;
+  await reload();
+}
+
 // Premier lancement : choisir le mot de passe (une seule fois, tant qu'il n'existe pas).
 export const setupPassword = wrap(async (req, res) => {
-  if (tooManyAttempts(req)) return res.status(429).json({ error: 'Trop de tentatives, réessaie dans quelques minutes.' });
-  if (setupCodeRequired()) {
-    const given = Buffer.from(String(req.body?.code ?? '').replace(/\s/g, ''));
-    const expected = Buffer.from(state.setupCode || '');
-    if (!state.setupCode || given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
-      recordFailure(req);
-      return res.status(403).json({ error: 'Code d’installation incorrect. Il est affiché dans les journaux du serveur.' });
-    }
-  }
+  const refused = firstLaunchProblem(req, req.body?.code);
+  if (refused) return res.status(refused.status).json({ error: refused.error });
   const problem = checkNewPassword(req.body?.password);
   if (problem) return res.status(400).json({ error: problem });
   const hash = await hashPassword(req.body.password);

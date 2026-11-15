@@ -1,13 +1,77 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import pg from 'pg';
 
-// Garder les colonnes "date" sous forme "YYYY-MM-DD" (pas de décalage de fuseau).
-pg.types.setTypeParser(1082, (v) => v);
+// Deux moteurs, exactement le même SQL (PostgreSQL 17) :
+//  - « embarqué » (par défaut) : PGlite, PostgreSQL compilé en WebAssembly, dans DATA_DIR/db.
+//    Aucun service à installer : c'est ce qu'utilisent l'application de bureau et `node src/index.js`.
+//  - « postgres » : un serveur PostgreSQL classique si DATABASE_URL ou PGHOST est défini
+//    (ancien docker-compose avec son conteneur `db`).
+export const DATA_DIR = path.resolve(process.env.DATA_DIR || 'data');
+export const engine = process.env.DATABASE_URL || process.env.PGHOST ? 'postgres' : 'embedded';
 
-// Sans DATABASE_URL, pg lit PGHOST, PGUSER, PGPASSWORD… (cas de docker-compose).
-export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// Garder les colonnes "date" sous forme "YYYY-MM-DD" (pas de décalage de fuseau), et les
+// bigint en texte, comme le fait pg.
+const DATE = 1082;
+const INT8 = 20;
+pg.types.setTypeParser(DATE, (v) => v);
 
-// Une connexion inactive coupée (redémarrage de Postgres) ne doit pas faire planter l'app.
-pool.on('error', (err) => console.error('Connexion Postgres perdue :', err.message));
+function postgresPool() {
+  // Sans DATABASE_URL, pg lit PGHOST, PGUSER, PGPASSWORD… (cas de docker-compose).
+  const p = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  // Une connexion inactive coupée (redémarrage de Postgres) ne doit pas faire planter l'app.
+  p.on('error', (err) => console.error('Connexion Postgres perdue :', err.message));
+  return p;
+}
+
+// PGlite n'a qu'une connexion : on la prête à un seul « client » à la fois, comme un pool
+// d'une connexion. Une transaction (connect … release) l'a donc pour elle seule, et une requête
+// isolée (pool.query) attend qu'elle soit finie : jamais une requête au milieu de la
+// transaction d'un autre.
+async function embeddedPool() {
+  const { PGlite } = await import('@electric-sql/pglite');
+  const dir = path.join(DATA_DIR, 'db');
+  fs.mkdirSync(dir, { recursive: true });
+  const db = new PGlite(dir, { parsers: { [DATE]: (v) => v, [INT8]: (v) => v } });
+  await db.waitReady;
+
+  let queue = Promise.resolve();
+  const acquire = () => {
+    let release;
+    const turn = new Promise((resolve) => (release = resolve));
+    const ready = queue.then(() => release);
+    queue = queue.then(() => turn);
+    return ready;
+  };
+  const run = async (text, params) => {
+    // Sans paramètres, plusieurs instructions sont possibles (migrations) : exec.
+    if (params === undefined) {
+      const results = await db.exec(text);
+      const last = results[results.length - 1] || { rows: [], affectedRows: 0 };
+      return { rows: last.rows, rowCount: Math.max(last.affectedRows ?? 0, last.rows.length) };
+    }
+    const r = await db.query(text, params);
+    return { rows: r.rows, rowCount: Math.max(r.affectedRows ?? 0, r.rows.length) };
+  };
+  return {
+    async query(text, params) {
+      const release = await acquire();
+      try {
+        return await run(text, params);
+      } finally {
+        release();
+      }
+    },
+    async connect() {
+      const release = await acquire();
+      return { query: run, release };
+    },
+    end: () => db.close(),
+    on() {},
+  };
+}
+
+export const pool = engine === 'postgres' ? postgresPool() : await embeddedPool();
 
 // Chaque entrée est appliquée une seule fois, dans l'ordre. Ne jamais modifier
 // une migration déjà déployée : en ajouter une nouvelle à la fin.
@@ -83,6 +147,8 @@ const MIGRATIONS = [
    );
    CREATE INDEX trash_waiting_idx ON trash (created_at) WHERE restored_at IS NULL;`,
 ];
+
+export const MIGRATION_COUNT = MIGRATIONS.length;
 
 async function waitForDatabase() {
   for (let attempt = 1; ; attempt++) {

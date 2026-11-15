@@ -68,6 +68,35 @@ export const api = {
   deleteMediaForever: (id) => request('DELETE', `/api/media/${id}/forever`),
   emptyTrash: (pageIds, mediaIds) => request('POST', '/api/trash/empty', { pageIds, mediaIds }),
 
+  // Sauvegardes
+  listBackups: () => request('GET', '/api/backups'),
+  createBackup: () => request('POST', '/api/backups'),
+  backupUrl: (name) => `/api/backups/${encodeURIComponent(name)}`,
+  // Premier lancement : envoi d'une sauvegarde (peut être gros : XHR pour suivre l'envoi).
+  restore(file, code, onProgress) {
+    return new Promise((resolve, reject) => {
+      const form = new FormData();
+      if (code) form.append('code', code);
+      form.append('file', file, file.name);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/restore');
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+      xhr.upload.onload = () => onProgress?.(1);
+      xhr.onload = () => {
+        let data = null;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch {
+          /* réponse non JSON */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data?.error || `Erreur ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error('Le journal ne répond pas.'));
+      xhr.send(form);
+    });
+  },
+
   getSettings: () => request('GET', '/api/settings'),
   saveSettings: (settings) => request('PUT', '/api/settings', settings),
   setupPassword: (body) => request('POST', '/api/setup/password', body),

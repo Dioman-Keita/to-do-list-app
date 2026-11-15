@@ -4,9 +4,10 @@ import path from 'node:path';
 import express from 'express';
 import multer from 'multer';
 import sharp from 'sharp';
-import { pool } from './db.js';
+import { DATA_DIR, engine, pool } from './db.js';
+import { backupConfig, backupPath, backupStatus, createBackup, initBackups, listBackups } from './backup.js';
 
-export const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || 'data/uploads');
+export const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(DATA_DIR, 'uploads'));
 await fs.mkdir(UPLOAD_DIR, { recursive: true });
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
@@ -15,7 +16,8 @@ const THUMB_SIDE = 640;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MEDIA_COLS = 'id, day, kind, file, thumb, overlay, caption, width, height, tilt, created_at';
 const ENTRY_COLS = 'day, title, body, moods, weather, content, content_text, updated_at';
-const SPELLCHECK_URL = (process.env.SPELLCHECK_URL || '').replace(/\/$/, '');
+// Lu à chaque requête : l'application de bureau démarre LanguageTool après le serveur.
+const spellcheckUrl = () => (process.env.SPELLCHECK_URL || '').replace(/\/$/, '');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -126,7 +128,32 @@ export async function readSettings() {
   };
 }
 
+initBackups(UPLOAD_DIR);
+
 export const apiRouter = express.Router();
+
+// ---- Sauvegardes (un .zip : toutes les données + toutes les images) ----
+
+apiRouter.get(
+  '/backups',
+  ah(async (req, res) => {
+    const c = backupConfig();
+    res.json({ dir: c.dir, intervalHours: c.intervalHours, keepDays: c.keepDays, engine, items: await listBackups(), ...backupStatus() });
+  })
+);
+
+apiRouter.post(
+  '/backups',
+  ah(async (req, res) => res.status(201).json(await createBackup('manuelle')))
+);
+
+apiRouter.get('/backups/:name', (req, res) => {
+  const file = backupPath(req.params.name);
+  if (!file) return res.status(404).json({ error: 'Introuvable' });
+  res.download(file, req.params.name, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Introuvable' });
+  });
+});
 
 apiRouter.get(
   '/settings',
@@ -437,6 +464,7 @@ apiRouter.patch(
 apiRouter.post(
   '/spellcheck',
   ah(async (req, res) => {
+    const SPELLCHECK_URL = spellcheckUrl();
     if (!SPELLCHECK_URL) throw new HttpError(503, 'Correcteur désactivé');
     const text = String(req.body?.text ?? '').slice(0, 20000);
     if (!text.trim()) return res.json({ matches: [] });

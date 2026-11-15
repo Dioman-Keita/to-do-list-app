@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../lib/api.js';
 import { Page, TornLabel } from './Decor.jsx';
 import { CoverChooser, CoverPreview, IdentityFields, useIdentityForm } from './IdentityForm.jsx';
+import BackupSection from './BackupSection.jsx';
 
 // Onglet Paramètres : changer son prénom, le titre et la couverture du journal.
 export default function SettingsView({ currentTitle, onSaved }) {
@@ -132,6 +133,7 @@ function SettingsForm({ initial, onSaved }) {
           <IdentityFields form={form} />
         </form>
         <PasswordChange />
+        <BackupSection />
       </Page>
       <Page side="right" seed="parametres">
         <h2 className="hand-title">La couverture</h2>
