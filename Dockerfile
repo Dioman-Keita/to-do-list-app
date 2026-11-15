@@ -10,13 +10,14 @@ RUN npm run build
 FROM node:24-slim
 ENV NODE_ENV=production \
     PORT=3000 \
+    DATA_DIR=/data \
     UPLOAD_DIR=/data/uploads
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY server/src ./src
 COPY --from=web /web/dist ./public
-RUN mkdir -p /data/uploads && chown -R node:node /data
+RUN mkdir -p /data/uploads /data/backups && chown -R node:node /data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

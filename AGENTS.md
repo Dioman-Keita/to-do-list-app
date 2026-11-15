@@ -20,9 +20,9 @@ Interdit : toute ressource du jeu (images, polices, sons, noms) — on recrée l
 | Dossier | Rôle |
 | --- | --- |
 | `web/` | Front React 18 + Vite + Framer Motion ; éditeur TipTap (`components/JournalEditor.jsx`, `editor/extensions.js`) ; tout le CSS dans `src/styles.css` |
-| `server/` | API Express + PostgreSQL (`src/routes.js`, migrations dans `src/db.js`), images traitées par Sharp |
-| `desktop/` | Application Electron (fenêtre Windows connectée au serveur) |
-| `backup/` | Scripts de sauvegarde / restauration (conteneur `backup`) |
+| `server/` | API Express (`src/routes.js`, migrations dans `src/db.js`), images traitées par Sharp. Base : PostgreSQL embarqué (PGlite, `DATA_DIR/db`) par défaut, PostgreSQL classique si `DATABASE_URL`/`PGHOST` ; **même SQL pour les deux**. Sauvegardes `.zip` et restauration : `src/backup.js` |
+| `desktop/` | Application Electron : démarre le serveur et la base embarquée dans l'application (sans Docker), ou se connecte à un journal distant |
+| `backup/` | Sauvegarde / restauration au format PostgreSQL (conteneur `backup`, option Docker) |
 | `.github/workflows/` | CI de l'application de bureau |
 | `docker-compose.yml` | `db`, `app`, `languagetool` (correcteur), `backup`, `caddy` (profil https) |
 
@@ -37,16 +37,21 @@ cd desktop && npm run dist        # installateur Windows
 ## Règles de travail (importantes)
 
 1. **Le journal de l'utilisateur est privé.** Ne jamais lire son contenu (textes, photos, base de
-   données). Pour tester, utiliser une **instance de démo** séparée, par exemple :
-   `docker compose -p journal-demo --env-file <fichier-env-demo> up -d` (autre port, autres volumes,
-   autre mot de passe), avec des données fictives. Sur le journal réel, se limiter à des comptages
+   données). Pour tester, utiliser une **instance de démo** séparée, avec des données fictives :
+   `DATA_DIR=<dossier-temporaire> PORT=<autre-port> node src/index.js`, l'application de bureau avec
+   `--profile=<dossier-temporaire>` (et un `config.json` qui fixe `backupDir` dans ce dossier, pour ne
+   rien écrire dans les Documents de l'utilisateur), ou
+   `docker compose -p journal-demo --env-file <fichier-env-demo> up -d`. Sur le journal réel, se limiter à des comptages
    (nombre de journées, de médias, de caractères) pour vérifier qu'une mise à jour n'a rien perdu.
 2. **Les données sont sacrées.**
    - Migrations **additives uniquement** (`MIGRATIONS` dans `server/src/db.js`) : on ajoute des
      colonnes ou des tables, on ne supprime ni ne réécrit jamais une colonne existante. Ne jamais
      modifier une migration déjà déployée.
-   - Avant de déployer sur le journal réel : `docker compose exec backup sh /scripts/backup.sh once`,
-     puis comparer les comptages avant / après.
+   - Avant de déployer sur le journal réel : une sauvegarde (Paramètres → Sauvegardes,
+     `node src/backup-cli.js`, ou `docker compose exec backup sh /scripts/backup.sh once`), puis
+     comparer les comptages avant / après.
+   - Toute nouvelle table doit être ajoutée à `TABLES` dans `server/src/backup.js`, sinon elle
+     manquera aux sauvegardes. Le SQL doit rester valable pour PGlite **et** PostgreSQL.
    - Toute suppression côté interface est douce (`deleted_at`, corbeille) ou limitée à du vide
      (pages vierges). Seule exception : « effacer » / « Vider la corbeille » dans l'onglet Corbeille,
      voulu par l'utilisateur, toujours derrière une confirmation explicite. Rien ne doit jamais

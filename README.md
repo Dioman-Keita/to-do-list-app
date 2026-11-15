@@ -53,28 +53,36 @@ maintenant dans la liste « À faire » de chaque journée.
 | Partie | Outils |
 | --- | --- |
 | Front | React 18, Vite, Framer Motion, polices Patrick Hand & Gochi Hand (auto-hébergées via Fontsource) |
-| API | Node.js, Express, `pg`, Multer, Sharp (rotation EXIF, redimensionnement, vignettes WebP) |
-| Données | PostgreSQL 17 (texte, tâches, métadonnées) + volume Docker pour les images |
+| API | Node.js, Express, Multer, Sharp (rotation EXIF, redimensionnement, vignettes WebP) |
+| Données | PostgreSQL 17 : embarqué (PGlite, WebAssembly) dans l'application, ou serveur classique (`pg`) avec Docker ; images dans un dossier |
+| Sauvegardes | Un `.zip` (toutes les tables + toutes les images) : à la demande, automatique, et repris au premier lancement d'un journal neuf |
 | Éditeur | TipTap (ProseMirror), pages en colonnes CSS |
-| Correcteur | LanguageTool 6.8 (conteneur local, ~1 Go de RAM) |
-| Bureau | Electron 44 (fenêtre Windows connectée au serveur), installateur NSIS via electron-builder |
-| Ops | Docker Compose, conteneur de sauvegarde automatique, Caddy (HTTPS) en option, GitHub Actions |
+| Correcteur | LanguageTool 6.8 (conteneur local avec Docker, ~1 Go de RAM) ; sinon le correcteur du navigateur |
+| Bureau | Electron 44 : le journal complet dans l'application (sans Docker), installateur NSIS via electron-builder |
+| Ops | Docker Compose en option (VPS), Caddy (HTTPS), GitHub Actions |
 
 ## 🚀 Lancer sur ton PC
 
-Prérequis : Docker Desktop.
+**Le plus simple : l'application de bureau** (Windows), qui contient tout le journal — serveur et base
+de données — sans Docker ni rien d'autre à installer. Voir [Application de bureau](#️-application-de-bureau-windows).
+
+Sans l'application, avec Node.js 22 ou plus :
 
 ```bash
-cp .env.example .env
+cd web && npm install && npm run build
 ```
-
-Dans `.env`, remplis `POSTGRES_PASSWORD` (génère une valeur avec `openssl rand -hex 32`). Puis :
 
 ```bash
-docker compose up -d --build
+cd server && npm install && PUBLIC_DIR=../web/dist PORT=8080 npm start
 ```
 
-Ouvre <http://localhost:8080> : au premier lancement, tu choisis ton mot de passe, puis ton prénom et ta couverture.
+Ouvre <http://localhost:8080>. Les données sont dans `server/data/` (base embarquée, images, sauvegardes).
+
+**Avec Docker** (option, utile sur un VPS) : `cp .env.example .env`, remplis `POSTGRES_PASSWORD`
+(`openssl rand -hex 32`), puis `docker compose up -d --build` et ouvre <http://localhost:8080>.
+Docker ajoute un serveur PostgreSQL séparé et le correcteur LanguageTool.
+
+Au premier lancement, tu choisis ton mot de passe (ou tu reprends une sauvegarde), puis ton prénom et ta couverture.
 
 Par défaut le journal n'écoute que sur ce PC (`APP_BIND=127.0.0.1`). Pour y accéder depuis ton
 téléphone sur le même Wi-Fi, mets `APP_BIND=0.0.0.0` puis ouvre `http://<ip-du-pc>:8080`.
@@ -109,9 +117,14 @@ jamais stocké en clair, ni dans la base ni dans `.env`. Le secret qui signe les
   que sur ce PC (réglage par défaut), pas de code. `SETUP_CODE=always` ou `never` force l’un ou l’autre.
 - **Changer** : onglet **Paramètres** → « Changer le mot de passe » (l’ancien est demandé). Les autres
   appareils sont déconnectés.
-- **Mot de passe oublié** : sur la machine qui héberge le journal, puis reconnecte-toi avec le nouveau :
+- **Mot de passe oublié** : sur la machine qui héberge le journal, puis reconnecte-toi avec le nouveau.
+  Avec Docker :
   ```bash
   docker compose exec app node src/reset-password.js
+  ```
+  Avec l'application de bureau (la fermer d'abord ; il faut Node.js) :
+  ```bash
+  cd server && DATA_DIR="$APPDATA/Journal/journal" node src/reset-password.js
   ```
 - **Anciennes installations** : `APP_PASSWORD` et `SESSION_SECRET` présents dans `.env` sont importés
   automatiquement au démarrage (une seule fois, sessions ouvertes conservées). Tu peux ensuite retirer
@@ -119,73 +132,72 @@ jamais stocké en clair, ni dans la base ni dans `.env`. Le secret qui signe les
 
 ## 💾 Sauvegardes
 
-Le service `backup` fait au démarrage puis toutes les `BACKUP_INTERVAL_HOURS` heures :
+Une sauvegarde est **un seul fichier** `journal_<date>.zip` : toutes les tables (journées, tâches,
+corbeille, dictionnaire, réglages — le mot de passe n'y est qu'en empreinte) et toutes les images.
+Le même fichier marche partout : application de bureau, `node`, Docker.
 
-- `backups/db_<date>.dump` — la base (format `pg_dump` custom) ;
-- `backups/uploads_<date>.tar.gz` — toutes les images ;
-- suppression des sauvegardes de plus de `BACKUP_KEEP_DAYS` jours.
+- **À la demande** : onglet **Paramètres** → **Sauvegardes** → « Faire une sauvegarde maintenant ».
+  Les dernières sont listées, avec un lien pour les télécharger.
+- **Automatique** : au démarrage si la dernière a plus de 24 h, puis toutes les `BACKUP_INTERVAL_HOURS`
+  heures. Celles de plus de `BACKUP_KEEP_DAYS` jours sont rangées, mais **les 5 dernières restent toujours**.
+- **Où** : application de bureau → `Documents\Journal\Sauvegardes`, modifiable dans Paramètres
+  (« changer de dossier », par exemple un dossier OneDrive) ; `node` → `server/data/backups` ou
+  `BACKUP_DIR` ; Docker → volume `zips` (téléchargement depuis l'interface).
+- **En ligne de commande** : `node src/backup-cli.js` (application fermée) ou
+  `docker compose exec app node src/backup-cli.js`.
 
-Le dossier se règle avec `BACKUP_DIR` (ex. un disque externe ou un dossier synchronisé avec un cloud).
-Pour une copie hors du serveur, synchronise ce dossier (rclone, Syncthing, rsync…).
-
-Sauvegarde manuelle immédiate :
-
-```bash
-docker compose exec backup sh /scripts/backup.sh once
-```
-
-Restaurer (⚠️ remplace les données actuelles) :
-
-```bash
-docker compose stop app
-```
-
-```bash
-docker compose run --rm --entrypoint sh backup /scripts/restore.sh 2026-10-27_030000
-```
-
-```bash
-docker compose start app
-```
-
-Sans horodatage, `restore.sh` liste les sauvegardes disponibles.
-Sous Git Bash (Windows), préfixe les commandes avec `MSYS_NO_PATHCONV=1`.
+**Restaurer** : sur un journal **neuf** (aucun mot de passe, aucune donnée), le premier écran propose
+« J'ai déjà un journal : reprendre une sauvegarde ». Le fichier est vérifié, tout est importé d'un bloc,
+puis les comptages (journées, tâches, médias, caractères, corbeille) sont comparés à ceux de la sauvegarde :
+au moindre écart, rien n'est gardé. Le mot de passe est **celui de la sauvegarde**. Un journal qui contient
+déjà des données refuse la restauration : elle ne remplace jamais rien.
 
 Les images supprimées depuis l'appli sont seulement masquées : le fichier reste sur le disque
 (et dans les sauvegardes). Les pages arrachées sont gardées dans la table `trash`. Tout se
 retrouve dans l'onglet **Corbeille**, qui n'est jamais vidé automatiquement. Un élément effacé pour
 toujours depuis la corbeille reste dans les sauvegardes déjà faites, jusqu'à leur rotation.
 
+### 🚚 Passer du journal Docker à l'application de bureau
+
+1. Fais une sauvegarde `.zip` du journal Docker : depuis ses Paramètres (une fois à jour), ou
+   `docker compose exec app node src/backup-cli.js`, puis récupère le fichier (lien « télécharger »).
+2. Installe l'application de bureau, choisis « Sur cet ordinateur », puis « reprendre une sauvegarde »
+   et donne-lui le `.zip`. Connecte-toi avec ton mot de passe habituel.
+3. Vérifie que tout est là. Le journal Docker n'est jamais modifié : tu peux l'arrêter
+   (`docker compose stop`) et ne le supprimer que lorsque tu es sûr.
+
+### 🐳 Sauvegardes du journal Docker (PostgreSQL)
+
+Avec Docker, le service `backup` fait en plus, au démarrage puis toutes les `BACKUP_INTERVAL_HOURS` heures,
+une copie au format PostgreSQL : `backups/db_<date>.dump` (base, `pg_dump`) et
+`backups/uploads_<date>.tar.gz` (images), supprimées après `BACKUP_KEEP_DAYS` jours.
+
+```bash
+docker compose exec backup sh /scripts/backup.sh once
+```
+
+Restaurer ce format (⚠️ remplace les données actuelles) : `docker compose stop app`, puis
+`docker compose run --rm --entrypoint sh backup /scripts/restore.sh 2026-10-27_030000`, puis
+`docker compose start app`. Sans horodatage, `restore.sh` liste les sauvegardes disponibles.
+Sous Git Bash (Windows), préfixe les commandes avec `MSYS_NO_PATHCONV=1`. Ces fichiers ne se
+reprennent pas dans l'application de bureau : pour elle, utilise le `.zip`.
+
 ### 🚚 Réinstaller sur un nouveau VPS à partir d'une sauvegarde
 
-Procédure testée sur une installation vierge (base vide, volumes neufs) : textes, tâches, photos
-et annotations reviennent à l'identique.
-
-1. Sur le nouveau serveur : installe Docker, clone le dépôt, recrée le `.env`.
-   Seul `POSTGRES_PASSWORD` est nécessaire : le mot de passe du journal est dans la sauvegarde
-   (en base), c’est donc **celui de la date de la sauvegarde** qui reviendra.
-2. Copie les deux fichiers d'une même sauvegarde (`db_<date>.dump` et `uploads_<date>.tar.gz`)
-   dans le dossier `BACKUP_DIR` (par défaut `./backups`).
-3. Démarre uniquement la base, restaure, puis lance le reste :
-   ```bash
-   docker compose up -d db
-   ```
-   ```bash
-   docker compose run --rm --entrypoint sh backup /scripts/restore.sh <date>
-   ```
-   ```bash
-   docker compose --profile https up -d --build
-   ```
+Le plus simple : installe le journal neuf, puis « reprendre une sauvegarde » au premier lancement
+avec un `.zip` (il faut le code d'installation affiché par `docker compose logs app`).
+Avec le format PostgreSQL : recrée le `.env` (seul `POSTGRES_PASSWORD` est nécessaire), copie
+`db_<date>.dump` et `uploads_<date>.tar.gz` dans `BACKUP_DIR`, puis `docker compose up -d db`,
+`docker compose run --rm --entrypoint sh backup /scripts/restore.sh <date>` et
+`docker compose --profile https up -d --build`.
 
 ### ⚠️ Ce que la sauvegarde ne couvre pas
 
-- **Une panne du serveur lui-même** : par défaut les sauvegardes sont sur le même disque que les données.
-  Copie régulièrement `BACKUP_DIR` ailleurs (autre machine, cloud, disque externe), idéalement chiffré :
-  c'est un journal intime.
-- **Le fichier `.env`** : il n'est pas sauvegardé (il contient `POSTGRES_PASSWORD`). Range-le dans un gestionnaire de mots de passe.
-- **Restaurer une ancienne sauvegarde remet aussi l'ancien mot de passe du journal** (il est en base). En cas
-  d'oubli : `docker compose exec app node src/reset-password.js`.
-- **Les échecs** : une sauvegarde ratée est seulement écrite dans les logs (`docker compose logs backup`) ; aucune alerte n'est envoyée.
+- **Une panne du disque** : par défaut les sauvegardes sont sur le même disque que les données.
+  Choisis un dossier synchronisé (OneDrive…) ou copie-les ailleurs, idéalement chiffrées : c'est un journal intime.
+- **Le fichier `.env`** (Docker) : il n'est pas sauvegardé (il contient `POSTGRES_PASSWORD`). Range-le dans un gestionnaire de mots de passe.
+- **Restaurer une ancienne sauvegarde remet aussi l'ancien mot de passe du journal** (il est en base).
+- **Les échecs** : une sauvegarde automatique ratée s'affiche dans Paramètres → Sauvegardes et dans les logs ; aucune alerte n'est envoyée.
 
 ## ✍️ Changer la police
 
@@ -201,13 +213,18 @@ Les polices manuscrites sont définies en haut de [`web/src/styles.css`](web/src
 
 ## 🖥️ Application de bureau (Windows)
 
-Le dossier [`desktop/`](desktop/) contient une application Electron : le journal dans sa propre
-fenêtre (sans barre de navigateur), qui se connecte au serveur — ce PC avec Docker, ou un VPS.
-Les données, les sauvegardes et le correcteur restent côté serveur.
+Le dossier [`desktop/`](desktop/) contient une application Electron qui **contient tout le journal** :
+le serveur et une base PostgreSQL embarquée (PGlite, en WebAssembly) tournent dans l'application. Pas de
+Docker, pas de service à installer, rien à démarrer à la main.
 
-- **Premier lancement** : adresse du journal (`http://localhost:8080` sur ce PC), test de connexion.
-- **Journal sur ce PC** : en indiquant le dossier du projet, l'application réveille Docker Desktop et
-  lance `docker compose up -d` si le journal dort.
+- **Données** : `%APPDATA%\Journal\journal` (base `db/`, images `uploads/`).
+- **Sauvegardes** : `Documents\Journal\Sauvegardes` par défaut, modifiable dans Paramètres.
+- **Premier lancement** : « Sur cet ordinateur » (recommandé) ou « Sur un serveur » (VPS, ou l'ancien
+  journal Docker : `http://localhost:8080`). Puis mot de passe — ou reprise d'une sauvegarde `.zip`.
+- Le journal reste ouvert dans le navigateur tant que l'application tourne : `http://127.0.0.1:8080`
+  (8081, 8082… si le port est pris), uniquement depuis ce PC.
+- Correcteur : celui de Windows (soulignement rouge, suggestions au clic droit). LanguageTool n'est
+  utilisé qu'avec Docker pour l'instant.
 - Option « ouvrir au démarrage de Windows », fenêtre et taille mémorisées, une seule instance.
 - Sécurité : seul le journal s'affiche dans la fenêtre ; les liens externes s'ouvrent dans le navigateur ;
   aucune permission (caméra, micro…) accordée.
@@ -219,32 +236,25 @@ Télécharge `Journal Setup x.y.z.exe` depuis les
 [Releases GitHub](https://github.com/Dioman-Keita/to-do-list-app/releases), puis lance-le.
 L'installateur n'est pas signé (une signature de code demande un certificat payant) : Windows SmartScreen
 affiche « Windows a protégé votre ordinateur » → **Informations complémentaires** → **Exécuter quand même**.
-
-Au premier lancement :
-
-1. **Adresse du journal** : `http://localhost:8080` si le journal tourne sur ce PC, sinon l'adresse du VPS.
-2. **Journal sur ce PC** (facultatif) : coche la case et choisis le dossier du projet (celui qui contient
-   `docker-compose.yml`). L'application démarrera Docker Desktop et le journal s'ils sont arrêtés.
-3. « Ouvrir mon journal → », puis ton mot de passe habituel.
-
-Pour changer d'adresse plus tard : si le journal ne répond pas, l'écran d'attente propose « Modifier la connexion ».
-La configuration est dans `%APPDATA%\Journal\config.json`.
+La configuration est dans `%APPDATA%\Journal\config.json`. Une ancienne configuration « journal Docker
+sur ce PC » passe automatiquement au journal intégré : il démarre vide et propose de reprendre une sauvegarde.
 
 ### Intégration continue
 
 Le workflow [`desktop.yml`](.github/workflows/desktop.yml) tourne sur Windows à chaque PR ou push sur `main`
-qui touche `desktop/` : vérification du code, construction de l'installateur, puis **test de démarrage**
-(l'application doit afficher son écran de premier lancement). L'installateur est téléchargeable dans
-l'onglet **Actions** du dépôt (artefact `journal-desktop-windows`, conservé 30 jours).
+qui touche `desktop/`, `server/` ou `web/` : construction du front et de l'installateur, puis **tests de
+démarrage** (écran de premier lancement, puis journal intégré qui répond et propose une reprise de sauvegarde).
+L'installateur est téléchargeable dans l'onglet **Actions** du dépôt (artefact `journal-desktop-windows`,
+conservé 30 jours).
 
 Publier une version (crée une Release GitHub avec le `.exe`) :
 
 ```bash
-git tag desktop-v1.1.0
+git tag desktop-v2.0.0
 ```
 
 ```bash
-git push origin desktop-v1.1.0
+git push origin desktop-v2.0.0
 ```
 
 Le numéro du tag devient la version de l'application (workflow [`desktop-release.yml`](.github/workflows/desktop-release.yml)).
@@ -252,21 +262,26 @@ Le numéro du tag devient la version de l'application (workflow [`desktop-releas
 ### Construire sur son PC
 
 ```bash
+cd web && npm install && npm run build
+```
+
+```bash
+cd server && npm ci --omit=dev
+```
+
+```bash
 cd desktop && npm install && node node_modules/electron/install.js && npm run dist
 ```
 
 `node node_modules/electron/install.js` télécharge Electron lui-même : les versions récentes de npm
-bloquent les scripts d'installation des paquets. L'installateur est créé dans `desktop/dist/`.
-`npm start` lance l'application sans l'installer ; `--profile=<dossier>` utilise un profil séparé.
+bloquent les scripts d'installation des paquets. L'installateur est créé dans `desktop/dist/` et embarque
+`server/` et `web/dist/`. `npm start` lance l'application sans l'installer ; `--profile=<dossier>` utilise
+un profil (et donc un journal) séparé.
 
 ## 🛠️ Développement
 
-```bash
-docker compose up -d db
-```
-
-Dans `.env`, ajoute `DATABASE_URL=postgres://journal:<mot-de-passe>@localhost:5432/journal`
-et expose le port 5432 du service `db` (`ports: ["127.0.0.1:5432:5432"]`). Ensuite :
+Aucun service à lancer : sans `DATABASE_URL` ni `PGHOST`, le serveur utilise la base embarquée
+(`server/data/`).
 
 ```bash
 cd server && npm install && npm run dev
@@ -277,18 +292,19 @@ cd web && npm install && npm run dev
 ```
 
 Le front tourne sur <http://localhost:5173> et redirige `/api` et `/media` vers l'API (port 3000).
+Pour travailler sur un PostgreSQL classique, définis `DATABASE_URL` (ou `PGHOST`, `PGUSER`…).
 
 ## 📁 Structure
 
 ```
-server/        API Express (auth, journées, tâches, médias, migrations)
+server/        API Express (auth, journées, tâches, médias, migrations, sauvegardes .zip), base embarquée ou PostgreSQL
 web/           Front React (carnet, éditeur de dessin, albums, calendrier)
-backup/        Scripts de sauvegarde / restauration
+backup/        Sauvegarde / restauration au format PostgreSQL (conteneur `backup`, Docker)
 legacy/        Ancienne to-do list en JavaScript vanilla
-desktop/       Application de bureau Electron (fenêtre, écran de connexion, installateur)
+desktop/       Application de bureau Electron : le journal complet, sans Docker (installateur)
 docs/          Captures d'écran et direction artistique (docs/design/)
 .github/       Intégration continue (installateur Windows, publication des versions)
 AGENTS.md      Guide pour les agents IA (CLAUDE.md l'importe)
 Dockerfile     Image unique : build du front + serveur Node
-docker-compose.yml
+docker-compose.yml   Option Docker (VPS) : app + PostgreSQL + LanguageTool + sauvegardes
 ```
