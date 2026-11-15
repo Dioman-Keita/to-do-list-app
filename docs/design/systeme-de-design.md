@@ -99,7 +99,7 @@ derniers créent des lignes manquantes ou pointillées à certains zooms.
 | `.sticker-btn` (+ `.pink`, `.blue`, `.plain`, `.danger`) | `styles.css` | Boutons d'action : bord `--ink` 2 px, ombre `2px 3px 0`, coins inégaux |
 | `.sticker` | `styles.css` / `DayView.jsx` | Choix d'un emoji (humeur, météo) : rond de papier, actif = bord rose pointillé |
 | `.ink-button` (web), `.link` (bureau) | `styles.css`, `desktop/renderer/setup.css` | Action secondaire : texte souligné à la main |
-| `.scrap` + `.tape-top` | `styles.css` | Bout de papier ligné scotché (liste de tâches, formulaire) |
+| `.scrap` + `.tape-top` | `styles.css` | Bout de papier ligné scotché (liste de tâches, formulaire). Tâches : champs qui passent à la ligne, une ligne de texte = une ligne du papier (34 px), rature `.task-ink` dessinée ligne par ligne |
 | `Polaroid` | `Polaroid.jsx` | Toute image : cadre blanc, scotch, inclinaison `tilt`, légende manuscrite |
 | `.footer-strip` | `styles.css` | Navigation sous le carnet (jamais par-dessus les pages) |
 | `.fmt-bar` / `.fmt` | `JournalEditor.jsx` | Barre de mise en forme du carnet |
