@@ -1,24 +1,24 @@
 // Journal — application de bureau.
-// Une fenêtre Windows sur le serveur du journal (ce PC avec Docker, ou un VPS) :
-// le journal lui-même (données, sauvegardes, correcteur) reste côté serveur.
+// Par défaut, le journal tourne DANS l'application : serveur Node et base PostgreSQL embarquée
+// (PGlite), sans Docker ni aucun service à installer. Les données sont dans le profil Windows,
+// les sauvegardes .zip dans un dossier au choix (OneDrive…).
+// Autre possibilité : se connecter à un journal hébergé ailleurs (VPS).
 const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
-const { execFile, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 // --profile=<dossier> : profil séparé (tests, ou plusieurs journaux sur le même PC).
 const profileArg = process.argv.find((a) => a.startsWith('--profile='));
 if (profileArg) app.setPath('userData', path.resolve(profileArg.slice('--profile='.length)));
 
 const CONFIG_FILE = () => path.join(app.getPath('userData'), 'config.json');
-const DEFAULTS = { serverUrl: 'http://localhost:8080', composeDir: '', startWithWindows: false, bounds: null };
+const DEFAULTS = { mode: 'local', serverUrl: '', port: 8080, backupDir: '', startWithWindows: false, bounds: null };
 const SETUP_PAGE = path.join(__dirname, 'renderer', 'setup.html');
 const DESK = '#1b222d';
-// Emplacements habituels de Docker Desktop (installation par machine ou par utilisateur).
-const DOCKER_DESKTOP = [
-  path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Docker', 'Docker', 'Docker Desktop.exe'),
-  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'DockerDesktop', 'Docker Desktop.exe'),
-];
+// Le serveur et le front compilé : à côté de l'application une fois installée, dans le dépôt sinon.
+const SERVER_DIR = app.isPackaged ? path.join(process.resourcesPath, 'server') : path.join(__dirname, '..', 'server');
+const PUBLIC_DIR = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web', 'dist');
 
 // Journal de fonctionnement (dossier du profil) : utile pour comprendre un démarrage raté.
 function log(...parts) {
@@ -29,16 +29,33 @@ function log(...parts) {
     /* rien de grave */
   }
 }
+// Les messages du serveur (migrations, sauvegardes…) vont aussi dans ce journal.
+for (const level of ['log', 'error']) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    original(...args);
+    log(level === 'error' ? '!' : '', ...args.map(String));
+  };
+}
 
 let win = null;
 let config = { ...DEFAULTS };
 let firstRun = false;
+let local = null; // { origin, server: module index.js, backup: module backup.js } une fois démarré
+let starting = null;
 
 // ---------- Configuration (dans le dossier de l'utilisateur, jamais dans l'appli) ----------
 
 function loadConfig() {
   try {
-    config = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(CONFIG_FILE(), 'utf8')) };
+    const saved = JSON.parse(fs.readFileSync(CONFIG_FILE(), 'utf8'));
+    // Ancienne version (journal Docker) : un journal « sur ce PC » devient le journal intégré.
+    if (!saved.mode) {
+      const host = saved.serverUrl ? new URL(saved.serverUrl).hostname : 'localhost';
+      saved.mode = saved.composeDir || ['localhost', '127.0.0.1'].includes(host) ? 'local' : 'remote';
+      delete saved.composeDir;
+    }
+    config = { ...DEFAULTS, ...saved };
   } catch {
     firstRun = true;
     config = { ...DEFAULTS };
@@ -56,7 +73,36 @@ function normalizeUrl(raw) {
   return url.origin;
 }
 
-// ---------- Serveur ----------
+const defaultBackupDir = () => path.join(app.getPath('documents'), 'Journal', 'Sauvegardes');
+
+// ---------- Journal intégré ----------
+
+function startLocal() {
+  if (local) return Promise.resolve(local);
+  if (starting) return starting;
+  starting = (async () => {
+    Object.assign(process.env, {
+      DATA_DIR: path.join(app.getPath('userData'), 'journal'),
+      BACKUP_DIR: config.backupDir || defaultBackupDir(),
+      PUBLIC_DIR,
+      JOURNAL_NAME: 'Mon journal',
+      SETUP_CODE: 'never', // n'écoute que sur ce PC (127.0.0.1)
+    });
+    delete process.env.DATABASE_URL;
+    delete process.env.PGHOST;
+    log('démarrage du journal intégré, données :', process.env.DATA_DIR);
+    const server = await import(pathToFileURL(path.join(SERVER_DIR, 'src', 'index.js')).href);
+    const backup = await import(pathToFileURL(path.join(SERVER_DIR, 'src', 'backup.js')).href);
+    const port = await server.start({ port: config.port, host: '127.0.0.1', portFallback: 20 });
+    local = { origin: `http://127.0.0.1:${port}`, server, backup };
+    return local;
+  })().finally(() => {
+    starting = null;
+  });
+  return starting;
+}
+
+// ---------- Journal distant ----------
 
 async function reachable(origin) {
   try {
@@ -67,73 +113,40 @@ async function reachable(origin) {
   }
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function run(cmd, args, cwd) {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { cwd, windowsHide: true, timeout: 180000 }, (err, stdout, stderr) => {
-      const res = { ok: !err, out: `${stdout}${stderr}`.trim() || String(err?.message || '') };
-      log(cmd, args.join(' '), '->', res.ok ? 'ok' : `échec : ${res.out.split('\n').pop()}`);
-      resolve(res);
-    });
-  });
-}
-
-async function waitFor(check, seconds) {
-  for (let i = 0; i < seconds; i += 2) {
-    if (await check()) return true;
-    await sleep(2000);
-  }
-  return false;
-}
-
-// Le journal tourne sur ce PC : réveiller Docker Desktop si besoin, puis « docker compose up -d ».
-async function startLocalServer(status) {
-  const dir = config.composeDir;
-  log('démarrage local, dossier :', dir);
-  if (!dir || !fs.existsSync(path.join(dir, 'docker-compose.yml'))) {
-    log('pas de docker-compose.yml dans ce dossier');
-    return false;
-  }
-  if (!(await run('docker', ['info'], dir)).ok) {
-    const exe = DOCKER_DESKTOP.find((p) => fs.existsSync(p));
-    log('Docker Desktop :', exe || 'introuvable');
-    if (!exe) return false;
-    status('Je réveille Docker…');
-    spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
-    if (!(await waitFor(async () => (await run('docker', ['info'], dir)).ok, 150))) return false;
-  }
-  status('J’ouvre le journal…');
-  const up = await run('docker', ['compose', 'up', '-d'], dir);
-  if (!up.ok) {
-    status(`Docker a refusé de démarrer le journal : ${up.out.split('\n').pop()}`);
-    return false;
-  }
-  return waitFor(() => reachable(config.serverUrl), 90);
-}
-
 // ---------- Fenêtre ----------
 
 function sendStatus(message, state = 'busy') {
   if (win && !win.isDestroyed()) win.webContents.send('status', { message, state });
 }
 
+const journalOrigin = () => (config.mode === 'local' ? local?.origin : config.serverUrl);
+
 async function connect() {
-  sendStatus('Je cherche ton journal…');
-  let ok = await reachable(config.serverUrl);
-  log('serveur', config.serverUrl, ok ? 'joignable' : 'injoignable', '| dossier local :', config.composeDir || '(aucun)');
-  if (!ok && config.composeDir) ok = await startLocalServer((m) => sendStatus(m));
-  if (!ok) {
-    sendStatus(`Le journal ne répond pas à ${config.serverUrl}.`, 'error');
-    return false;
+  if (config.mode === 'local') {
+    sendStatus('J’ouvre le journal…');
+    try {
+      await startLocal();
+    } catch (err) {
+      log('échec du journal intégré :', err.stack || err.message);
+      sendStatus(`Le journal n’a pas pu démarrer : ${err.message}`, 'error');
+      return false;
+    }
+  } else {
+    sendStatus('Je cherche ton journal…');
+    const ok = await reachable(config.serverUrl);
+    log('serveur', config.serverUrl, ok ? 'joignable' : 'injoignable');
+    if (!ok) {
+      sendStatus(`Le journal ne répond pas à ${config.serverUrl}.`, 'error');
+      return false;
+    }
   }
-  await win.loadURL(config.serverUrl);
+  await win.loadURL(journalOrigin());
   return true;
 }
 
 function isJournalUrl(url) {
   try {
-    return new URL(url).origin === config.serverUrl;
+    return new URL(url).origin === journalOrigin();
   } catch {
     return false;
   }
@@ -176,7 +189,7 @@ function createWindow() {
     }
   });
 
-  // Le serveur tombe en cours de route : retour à l'écran de connexion.
+  // Le serveur distant tombe en cours de route : retour à l'écran de connexion.
   win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
     if (isMainFrame && code !== -3 && isJournalUrl(url)) showSetup('offline');
   });
@@ -190,6 +203,11 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Les sauvegardes téléchargées depuis Paramètres : demander où les enregistrer.
+  win.webContents.session.on('will-download', (_e, item) => {
+    item.setSaveDialogOptions({ title: 'Enregistrer la sauvegarde', defaultPath: path.join(app.getPath('downloads'), item.getFilename()) });
   });
 
   win.webContents.on('context-menu', (_e, params) => showContextMenu(params));
@@ -232,22 +250,35 @@ function showContextMenu(params) {
   if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
 }
 
-// ---------- Échanges avec l'écran de connexion (pages locales uniquement) ----------
+// ---------- Échanges avec les pages ----------
 
+// Écran de connexion (page locale de l'application).
 function fromSetupPage(event) {
   return event.senderFrame?.url?.startsWith('file:');
 }
 
-function handle(channel, fn) {
+// Le journal intégré lui-même (127.0.0.1), pour ce qui n'existe qu'en version bureau.
+function fromLocalJournal(event) {
+  try {
+    return Boolean(local) && new URL(event.senderFrame?.url).origin === local.origin;
+  } catch {
+    return false;
+  }
+}
+
+// Cette page est-elle le journal intégré ? (sinon : pas de bouton « changer de dossier »)
+ipcMain.handle('desktop:isLocalJournal', (event) => fromLocalJournal(event));
+
+function handle(channel, allowed, fn) {
   ipcMain.handle(channel, (event, ...args) => {
-    if (!fromSetupPage(event)) throw new Error('Refusé');
+    if (!allowed(event)) throw new Error('Refusé');
     return fn(...args);
   });
 }
 
-handle('config:get', () => ({ ...config, firstRun, canAutostart: process.platform === 'win32' }));
+handle('config:get', fromSetupPage, () => ({ ...config, firstRun, canAutostart: process.platform === 'win32' }));
 
-handle('config:test', async (url) => {
+handle('config:test', fromSetupPage, async (url) => {
   try {
     const origin = normalizeUrl(url);
     return { ok: await reachable(origin), origin };
@@ -256,9 +287,9 @@ handle('config:test', async (url) => {
   }
 });
 
-handle('config:save', async (values) => {
-  config.serverUrl = normalizeUrl(values.serverUrl);
-  config.composeDir = values.composeDir ? String(values.composeDir) : '';
+handle('config:save', fromSetupPage, async (values) => {
+  config.mode = values.mode === 'remote' ? 'remote' : 'local';
+  if (config.mode === 'remote') config.serverUrl = normalizeUrl(values.serverUrl);
   config.startWithWindows = Boolean(values.startWithWindows);
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: config.startWithWindows });
   firstRun = false;
@@ -266,19 +297,24 @@ handle('config:save', async (values) => {
   return connect();
 });
 
-handle('config:pickFolder', async () => {
+handle('connect', fromSetupPage, () => connect());
+
+// Paramètres → Sauvegardes → « changer de dossier ».
+handle('backup:chooseDir', fromLocalJournal, async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Dossier du journal (celui qui contient docker-compose.yml)',
-    properties: ['openDirectory'],
+    title: 'Dossier des sauvegardes du journal',
+    defaultPath: config.backupDir || defaultBackupDir(),
+    properties: ['openDirectory', 'createDirectory'],
   });
-  if (res.canceled) return null;
-  const dir = res.filePaths[0];
-  return { dir, valid: fs.existsSync(path.join(dir, 'docker-compose.yml')) };
+  if (res.canceled) return false;
+  config.backupDir = res.filePaths[0];
+  saveConfig();
+  local.backup.setBackupDir(config.backupDir);
+  log('dossier des sauvegardes :', config.backupDir);
+  return true;
 });
 
-handle('connect', () => connect());
-
-// ---------- Démarrage ----------
+// ---------- Démarrage et arrêt ----------
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -296,6 +332,28 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setSpellCheckerLanguages(['fr']);
     loadConfig();
     createWindow();
+  });
+
+  // Refermer proprement la base embarquée avant de quitter.
+  let closing = false;
+  app.on('before-quit', (event) => {
+    if (closing) return;
+    // Quitter pendant le démarrage : attendre que la base soit ouverte pour la refermer proprement.
+    if (!local && starting) {
+      event.preventDefault();
+      starting.catch(() => {}).finally(() => app.quit());
+      return;
+    }
+    if (!local) return;
+    closing = true;
+    event.preventDefault();
+    local.server
+      .stop()
+      .catch((err) => log('arrêt :', err.message))
+      .finally(() => {
+        local = null;
+        app.quit();
+      });
   });
 
   app.on('window-all-closed', () => app.quit());

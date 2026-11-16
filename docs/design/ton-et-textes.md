@@ -36,6 +36,8 @@ Le journal parle comme **une personne qui écrit dans son carnet**, pas comme un
 | Arracher une page | Arracher la page 2 ? / oui, à la corbeille / non → je l’arrache… |
 | Corbeille | Rien ne s’efface tout seul ici : seulement si tu le décides. Effacé, c’est pour toujours. |
 | Déplacer une journée | ↪ Déplacer / Ce n’était pas le bon jour ? Tout déplacer au : / Le mercredi 11 novembre 2026 est vide ✓ / … a déjà des choses écrites : je ne mélange pas deux journées. |
+| Reprendre une sauvegarde | J’ai déjà un journal : reprendre une sauvegarde → / On reprend là où tu t’étais arrêté… / Dépose ta sauvegarde ici / Recoller mon journal → / Je recolle les pages… / Te revoilà ! ✓ |
+| Sauvegardes | Faire une sauvegarde maintenant → Je photocopie le carnet… → sauvegardé ✓ |
 | Effacer pour toujours | Effacer cette page pour toujours ? / Tout effacer pour toujours (3) ? → oui, effacer / non |
 | Recoller / remettre | Recoller → Recollée dans la journée du 16 octobre 2026 ✓ y aller → ; Remettre |
 | Appli de bureau, attente | Je cherche ton journal… / Je réveille Docker… / J’ouvre le journal… |

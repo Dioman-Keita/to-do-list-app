@@ -1,5 +1,5 @@
-// Écran de connexion de l'application de bureau : premier lancement, attente du serveur,
-// ou serveur injoignable.
+// Écran de connexion de l'application de bureau : premier lancement (journal sur ce PC ou sur
+// un serveur), démarrage, ou serveur injoignable.
 const $ = (id) => document.getElementById(id);
 const mode = new URLSearchParams(location.search).get('mode') || 'connect';
 let retryTimer = null;
@@ -25,16 +25,24 @@ async function connect() {
   if (!ok) retryTimer = setTimeout(connect, 15000);
 }
 
+const remote = () => $('mode-remote').checked;
+
+function syncMode() {
+  $('url-box').hidden = !remote();
+  // Champ caché = pas vérifié : « Sur cet ordinateur » ne doit pas exiger une adresse valide.
+  $('url').disabled = !remote();
+  $('test').hidden = !remote();
+  formStatus('');
+}
+
 async function fillForm() {
   const c = await window.desktop.getConfig();
   $('url').value = c.serverUrl;
-  $('local').checked = Boolean(c.composeDir);
-  $('dir').value = c.composeDir;
-  $('local-box').hidden = !c.composeDir;
+  $(c.mode === 'remote' ? 'mode-remote' : 'mode-local').checked = true;
   $('autostart').checked = c.startWithWindows;
   $('autostart-box').hidden = !c.canAutostart;
+  syncMode();
   show('form');
-  $('url').focus();
 }
 
 function formStatus(text, kind = '') {
@@ -49,15 +57,8 @@ $('edit').addEventListener('click', () => {
   clearTimeout(retryTimer);
   fillForm();
 });
-$('local').addEventListener('change', () => {
-  $('local-box').hidden = !$('local').checked;
-});
-$('pick').addEventListener('click', async () => {
-  const res = await window.desktop.pickFolder();
-  if (!res) return;
-  $('dir').value = res.dir;
-  formStatus(res.valid ? '' : 'Ce dossier ne contient pas de docker-compose.yml.', res.valid ? '' : 'error');
-});
+$('mode-local').addEventListener('change', syncMode);
+$('mode-remote').addEventListener('change', syncMode);
 $('test').addEventListener('click', async () => {
   formStatus('Je vérifie…');
   const res = await window.desktop.test($('url').value);
@@ -66,12 +67,12 @@ $('test').addEventListener('click', async () => {
 });
 $('form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if ($('local').checked && !$('dir').value) return formStatus('Choisis le dossier du journal, ou décoche la case.', 'error');
+  if (remote() && !$('url').value.trim()) return formStatus('Indique l’adresse du journal.', 'error');
   try {
     show('waiting');
     const ok = await window.desktop.save({
+      mode: remote() ? 'remote' : 'local',
       serverUrl: $('url').value,
-      composeDir: $('local').checked ? $('dir').value : '',
       startWithWindows: $('autostart').checked,
     });
     if (!ok) retryTimer = setTimeout(connect, 15000);

@@ -8,7 +8,7 @@ const MIN_LENGTH = 4;
 // Tout premier lancement : choisir le mot de passe secret du journal.
 // Si le journal est joignable depuis d'autres machines, le serveur exige aussi le code
 // d'installation affiché dans ses journaux (docker compose logs app).
-export default function PasswordSetup({ name, codeRequired, onDone }) {
+export default function PasswordSetup({ name, codeRequired, onRestore, onDone }) {
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -97,6 +97,11 @@ export default function PasswordSetup({ name, codeRequired, onDone }) {
             <motion.p className="form-error" initial={{ x: -8 }} animate={{ x: [8, -6, 4, 0] }}>
               {error}
             </motion.p>
+          )}
+          {onRestore && (
+            <button type="button" className="link-button restore-link" onClick={onRestore} disabled={busy}>
+              J’ai déjà un journal : reprendre une sauvegarde →
+            </button>
           )}
         </form>
       </motion.div>

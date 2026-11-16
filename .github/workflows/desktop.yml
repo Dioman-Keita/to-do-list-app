@@ -1,16 +1,21 @@
-# Application de bureau : construit l'installateur Windows, vérifie qu'il démarre,
-# et le met à disposition (artefact téléchargeable depuis l'onglet Actions).
+# Application de bureau : construit l'installateur Windows (le journal complet : serveur,
+# base embarquée et front), vérifie qu'il démarre, et le met à disposition (artefact
+# téléchargeable depuis l'onglet Actions).
 name: Application de bureau
 
 on:
   pull_request:
     paths:
       - 'desktop/**'
+      - 'server/**'
+      - 'web/**'
       - '.github/workflows/desktop*.yml'
   push:
     branches: [main]
     paths:
       - 'desktop/**'
+      - 'server/**'
+      - 'web/**'
       - '.github/workflows/desktop*.yml'
   workflow_dispatch:
   # Réutilisé par desktop-release.yml pour publier une version.
@@ -41,9 +46,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            server/package-lock.json
+            web/package-lock.json
 
       # « desktop-v1.2.0 » ou « 1.2.0 » -> 1.2.0 (variable d'environnement : pas d'injection via le tag)
       - name: Numéro de version
@@ -56,6 +64,19 @@ jobs:
       - name: Dépendances (Electron compris)
         run: npm ci
 
+      # Le journal embarqué dans l'application : front compilé et serveur (sans dépendances de dev).
+      - name: Front du journal
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Serveur du journal
+        working-directory: server
+        run: |
+          npm ci --omit=dev
+          node --check src/index.js
+
       - name: Vérification du code
         run: |
           node --check main.js
@@ -65,28 +86,38 @@ jobs:
       - name: Construction de l'installateur
         run: npx electron-builder --win nsis --publish never
 
-      # L'application doit démarrer et afficher l'écran de premier lancement.
+      # 1. Premier lancement : l'écran de choix s'affiche.
+      # 2. Journal sur ce PC : le journal intégré démarre (base embarquée) et répond.
       - name: Test de démarrage
         shell: pwsh
         run: |
           $app = Resolve-Path 'dist/win-unpacked/Journal.exe'
-          $profileDir = Join-Path $env:RUNNER_TEMP 'journal-profile'
-          $proc = Start-Process -FilePath $app -ArgumentList "--profile=$profileDir", '--remote-debugging-port=9222' -PassThru
-          try {
-            $ok = $false
-            for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+          function Wait-Until($test, $what) {
+            for ($i = 0; $i -lt 45; $i++) {
               Start-Sleep -Seconds 2
-              try {
-                $pages = Invoke-RestMethod -Uri 'http://127.0.0.1:9222/json' -TimeoutSec 2
-                $ok = [bool]($pages | Where-Object { $_.url -like '*setup.html*mode=first*' })
-              } catch { }
+              try { if (& $test) { Write-Host "OK : $what"; return } } catch { }
             }
-            if (-not $ok) { throw "L'écran de premier lancement ne s'est pas affiché" }
-            Write-Host "Écran de premier lancement affiché"
-          } finally {
-            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Get-Process -Name Journal -ErrorAction SilentlyContinue | Stop-Process -Force
+            throw "Échec : $what"
           }
+          function Stop-Journal { Get-Process -Name Journal -ErrorAction SilentlyContinue | Stop-Process -Force }
+
+          $first = Join-Path $env:RUNNER_TEMP 'profil-neuf'
+          Start-Process -FilePath $app -ArgumentList "--profile=$first", '--remote-debugging-port=9222' | Out-Null
+          try {
+            Wait-Until { [bool]((Invoke-RestMethod 'http://127.0.0.1:9222/json' -TimeoutSec 2) | Where-Object { $_.url -like '*setup.html*mode=first*' }) } "écran de premier lancement"
+          } finally { Stop-Journal }
+
+          $local = Join-Path $env:RUNNER_TEMP 'profil-local'
+          New-Item -ItemType Directory -Force $local | Out-Null
+          $backups = (Join-Path $env:RUNNER_TEMP 'sauvegardes') -replace '\\', '/'
+          Set-Content -Path (Join-Path $local 'config.json') -Encoding utf8 -Value "{ ""mode"": ""local"", ""port"": 8095, ""backupDir"": ""$backups"" }"
+          Start-Process -FilePath $app -ArgumentList "--profile=$local" | Out-Null
+          try {
+            Wait-Until { (Invoke-RestMethod 'http://127.0.0.1:8095/healthz' -TimeoutSec 2).ok } "journal intégré (base embarquée)"
+            $me = Invoke-RestMethod 'http://127.0.0.1:8095/api/me'
+            if (-not $me.needsPassword -or -not $me.canRestore) { throw "Journal neuf attendu : $($me | ConvertTo-Json -Compress)" }
+            Write-Host "OK : journal neuf, reprise d'une sauvegarde proposée"
+          } finally { Stop-Journal }
 
       - uses: actions/upload-artifact@v4
         with:

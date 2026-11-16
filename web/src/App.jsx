@@ -6,10 +6,12 @@ import Journal from './components/Journal.jsx';
 import Login from './components/Login.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import PasswordSetup from './components/PasswordSetup.jsx';
+import RestoreBackup from './components/RestoreBackup.jsx';
 import { applyCover } from './lib/identity.js';
 
 export default function App() {
   const [auth, setAuth] = useState(null);
+  const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setAuth((a) => ({ ...a, authed: false })));
@@ -56,8 +58,25 @@ export default function App() {
       <Butterfly />
       <AnimatePresence mode="wait">
         {auth &&
-          (auth.needsPassword ? (
-            <PasswordSetup key="password" name={auth.name} codeRequired={auth.setupCodeRequired} onDone={refresh} />
+          (auth.needsPassword && restoring ? (
+            <RestoreBackup
+              key="restore"
+              name={auth.name}
+              codeRequired={auth.setupCodeRequired}
+              onBack={() => setRestoring(false)}
+              onDone={async () => {
+                setRestoring(false);
+                setAuth(await api.me().catch(() => ({ authed: false, name: 'Mon journal' })));
+              }}
+            />
+          ) : auth.needsPassword ? (
+            <PasswordSetup
+              key="password"
+              name={auth.name}
+              codeRequired={auth.setupCodeRequired}
+              onRestore={auth.canRestore ? () => setRestoring(true) : null}
+              onDone={refresh}
+            />
           ) : !auth.authed ? (
             <Login key="login" name={auth.name} onLogin={refresh} />
           ) : auth.needsSetup ? (
