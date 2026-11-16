@@ -266,6 +266,9 @@ function fromLocalJournal(event) {
   }
 }
 
+// Cette page est-elle le journal intégré ? (sinon : pas de bouton « changer de dossier »)
+ipcMain.handle('desktop:isLocalJournal', (event) => fromLocalJournal(event));
+
 function handle(channel, allowed, fn) {
   ipcMain.handle(channel, (event, ...args) => {
     if (!allowed(event)) throw new Error('Refusé');
@@ -334,7 +337,14 @@ if (!app.requestSingleInstanceLock()) {
   // Refermer proprement la base embarquée avant de quitter.
   let closing = false;
   app.on('before-quit', (event) => {
-    if (!local || closing) return;
+    if (closing) return;
+    // Quitter pendant le démarrage : attendre que la base soit ouverte pour la refermer proprement.
+    if (!local && starting) {
+      event.preventDefault();
+      starting.catch(() => {}).finally(() => app.quit());
+      return;
+    }
+    if (!local) return;
     closing = true;
     event.preventDefault();
     local.server

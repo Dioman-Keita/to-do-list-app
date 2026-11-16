@@ -248,8 +248,9 @@ export async function refreshAuth() {
   const s = await readKeys();
   if (s.session_secret) state.secret = s.session_secret;
   else await upsert(pool, 'session_secret', state.secret);
-  state.setupCode = null;
   await reload();
+  // Sauvegarde faite avant le choix du mot de passe : le code d'installation reste valable.
+  if (state.hash) state.setupCode = null;
 }
 
 // Premier lancement : choisir le mot de passe (une seule fois, tant qu'il n'existe pas).

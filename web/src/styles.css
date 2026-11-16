@@ -2265,6 +2265,21 @@ li.done .task-ink {
   color: var(--ink-soft);
 }
 
+/* Champ fichier invisible mais atteignable au clavier : le focus se voit sur la zone de dépôt. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.restore-drop:focus-within {
+  outline: 2px dashed var(--pink);
+  outline-offset: 3px;
+}
+
 .restore-drop.over,
 .restore-drop:hover {
   border-color: var(--pink);

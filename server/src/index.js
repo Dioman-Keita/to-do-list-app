@@ -66,6 +66,9 @@ app.post(
   async (req, res, next) => {
     try {
       if (!(await isPristine())) return res.status(409).json({ error: 'Ce journal contient déjà des données.' });
+      // Code vérifié AVANT de recevoir le fichier (en-tête) : rien n'est écrit sur le disque sans lui.
+      const refused = firstLaunchProblem(req, req.get('x-setup-code'));
+      if (refused) return res.status(refused.status).json({ error: refused.error });
       next();
     } catch (err) {
       next(err);
@@ -74,8 +77,6 @@ app.post(
   restoreUpload.single('file'),
   async (req, res, next) => {
     try {
-      const refused = firstLaunchProblem(req, req.body?.code);
-      if (refused) return res.status(refused.status).json({ error: refused.error });
       if (!req.file) return res.status(400).json({ error: 'Aucun fichier' });
       const manifest = await restoreBackup(req.file.path);
       await refreshAuth();

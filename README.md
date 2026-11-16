@@ -66,14 +66,14 @@ maintenant dans la liste « À faire » de chaque journée.
 **Le plus simple : l'application de bureau** (Windows), qui contient tout le journal — serveur et base
 de données — sans Docker ni rien d'autre à installer. Voir [Application de bureau](#️-application-de-bureau-windows).
 
-Sans l'application, avec Node.js 22 ou plus :
+Sans l'application, avec Node.js 22 ou plus, depuis la racine du dépôt :
 
 ```bash
-cd web && npm install && npm run build
+(cd web && npm install && npm run build)
 ```
 
 ```bash
-cd server && npm install && PUBLIC_DIR=../web/dist PORT=8080 npm start
+(cd server && npm install && PUBLIC_DIR=../web/dist PORT=8080 npm start)
 ```
 
 Ouvre <http://localhost:8080>. Les données sont dans `server/data/` (base embarquée, images, sauvegardes).
@@ -122,9 +122,11 @@ jamais stocké en clair, ni dans la base ni dans `.env`. Le secret qui signe les
   ```bash
   docker compose exec app node src/reset-password.js
   ```
-  Avec l'application de bureau (la fermer d'abord ; il faut Node.js) :
+  Avec l'application de bureau : la fermer d'abord, installer [Node.js](https://nodejs.org) 22 ou plus,
+  puis lancer le serveur fourni avec l'application (dossier d'installation, par défaut
+  `%LOCALAPPDATA%\Programs\Journal`) :
   ```bash
-  cd server && DATA_DIR="$APPDATA/Journal/journal" node src/reset-password.js
+  (cd "$LOCALAPPDATA/Programs/Journal/resources/server" && DATA_DIR="$APPDATA/Journal/journal" node src/reset-password.js)
   ```
 - **Anciennes installations** : `APP_PASSWORD` et `SESSION_SECRET` présents dans `.env` sont importés
   automatiquement au démarrage (une seule fois, sessions ouvertes conservées). Tu peux ensuite retirer
@@ -262,15 +264,15 @@ Le numéro du tag devient la version de l'application (workflow [`desktop-releas
 ### Construire sur son PC
 
 ```bash
-cd web && npm install && npm run build
+(cd web && npm install && npm run build)
 ```
 
 ```bash
-cd server && npm ci --omit=dev
+(cd server && npm ci --omit=dev)
 ```
 
 ```bash
-cd desktop && npm install && node node_modules/electron/install.js && npm run dist
+(cd desktop && npm install && node node_modules/electron/install.js && npm run dist)
 ```
 
 `node node_modules/electron/install.js` télécharge Electron lui-même : les versions récentes de npm
@@ -284,11 +286,11 @@ Aucun service à lancer : sans `DATABASE_URL` ni `PGHOST`, le serveur utilise la
 (`server/data/`).
 
 ```bash
-cd server && npm install && npm run dev
+(cd server && npm install && npm run dev)
 ```
 
 ```bash
-cd web && npm install && npm run dev
+(cd web && npm install && npm run dev)
 ```
 
 Le front tourne sur <http://localhost:5173> et redirige `/api` et `/media` vers l'API (port 3000).

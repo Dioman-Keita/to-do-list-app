@@ -88,7 +88,13 @@ export default function RestoreBackup({ name, codeRequired, onBack, onDone }) {
                 pick(e.dataTransfer.files[0]);
               }}
             >
-              <input type="file" accept=".zip,application/zip" hidden disabled={busy} onChange={(e) => pick(e.target.files[0])} />
+              <input
+                type="file"
+                className="visually-hidden"
+                accept=".zip,application/zip"
+                disabled={busy}
+                onChange={(e) => pick(e.target.files[0])}
+              />
               {file ? (
                 <>
                   <span className="restore-file">{file.name}</span>

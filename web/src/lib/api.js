@@ -76,10 +76,10 @@ export const api = {
   restore(file, code, onProgress) {
     return new Promise((resolve, reject) => {
       const form = new FormData();
-      if (code) form.append('code', code);
       form.append('file', file, file.name);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/restore');
+      if (code) xhr.setRequestHeader('X-Setup-Code', code.replace(/\s/g, ''));
       xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
       xhr.upload.onload = () => onProgress?.(1);
       xhr.onload = () => {

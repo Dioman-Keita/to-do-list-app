@@ -29,6 +29,8 @@ const remote = () => $('mode-remote').checked;
 
 function syncMode() {
   $('url-box').hidden = !remote();
+  // Champ caché = pas vérifié : « Sur cet ordinateur » ne doit pas exiger une adresse valide.
+  $('url').disabled = !remote();
   $('test').hidden = !remote();
   formStatus('');
 }

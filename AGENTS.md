@@ -38,7 +38,8 @@ cd desktop && npm run dist        # installateur Windows
 
 1. **Le journal de l'utilisateur est privé.** Ne jamais lire son contenu (textes, photos, base de
    données). Pour tester, utiliser une **instance de démo** séparée, avec des données fictives :
-   `DATA_DIR=<dossier-temporaire> PORT=<autre-port> node src/index.js`, l'application de bureau avec
+   `env -u DATABASE_URL -u PGHOST DATA_DIR=<dossier-temporaire> BACKUP_DIR=<dossier-temporaire>/backups PORT=<autre-port> node src/index.js`
+   (sans `DATABASE_URL`/`PGHOST`, sinon la démo irait sur une vraie base PostgreSQL), l'application de bureau avec
    `--profile=<dossier-temporaire>` (et un `config.json` qui fixe `backupDir` dans ce dossier, pour ne
    rien écrire dans les Documents de l'utilisateur), ou
    `docker compose -p journal-demo --env-file <fichier-env-demo> up -d`. Sur le journal réel, se limiter à des comptages

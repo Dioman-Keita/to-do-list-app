@@ -99,7 +99,7 @@ export default function PasswordSetup({ name, codeRequired, onRestore, onDone })
             </motion.p>
           )}
           {onRestore && (
-            <button type="button" className="link-button restore-link" onClick={onRestore}>
+            <button type="button" className="link-button restore-link" onClick={onRestore} disabled={busy}>
               J’ai déjà un journal : reprendre une sauvegarde →
             </button>
           )}

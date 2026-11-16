@@ -14,6 +14,8 @@ if (location.protocol === 'file:') {
 } else if (location.hostname === '127.0.0.1') {
   // Journal intégré : ce qui n'existe qu'en version bureau (choisir un dossier sur ce PC).
   contextBridge.exposeInMainWorld('journalDesktop', {
+    // Vrai seulement dans le journal intégré (pas un journal distant sur 127.0.0.1) : vérifié par le processus principal.
+    isLocalJournal: () => ipcRenderer.invoke('desktop:isLocalJournal'),
     chooseBackupDir: () => ipcRenderer.invoke('backup:chooseDir'),
   });
 }

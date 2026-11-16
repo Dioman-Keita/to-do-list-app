@@ -13,6 +13,8 @@ export default function BackupSection() {
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const desktop = window.journalDesktop;
+  // Bouton « changer de dossier » : seulement dans le journal intégré à l'application de bureau.
+  const [canChooseDir, setCanChooseDir] = useState(false);
 
   const load = () =>
     api
@@ -22,6 +24,10 @@ export default function BackupSection() {
 
   useEffect(() => {
     load();
+    desktop
+      ?.isLocalJournal?.()
+      .then(setCanChooseDir)
+      .catch(() => setCanChooseDir(false));
   }, []);
 
   async function backupNow() {
@@ -54,7 +60,7 @@ export default function BackupSection() {
         <p className="backup-where">
           {info.intervalHours > 0 ? `Toute seule toutes les ${info.intervalHours} h, ` : 'Seulement à la main, '}
           dans <code title={info.dir}>{info.dir}</code>
-          {desktop?.chooseBackupDir && (
+          {canChooseDir && (
             <>
               {' '}
               <button type="button" className="link-button" onClick={chooseDir}>
