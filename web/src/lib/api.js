@@ -1,9 +1,37 @@
+// Application Android (VITE_LOCAL=1) : le journal tourne dans la page (src/local), sans serveur.
+export const LOCAL = import.meta.env.VITE_LOCAL === '1';
+// En version serveur, vite.config.js remplace ce module par une coquille vide.
+const local = () => import('../local/server.js');
+
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => {
   onUnauthorized = fn;
 };
 
+// FormData -> { fields, file } pour le journal autonome.
+function formToObject(form) {
+  const fields = {};
+  let file = null;
+  for (const [k, v] of form.entries()) {
+    if (v instanceof Blob) file = v;
+    else fields[k] = v;
+  }
+  return { fields, file };
+}
+
+async function localRequest(method, url, body) {
+  const { localRequest } = await local();
+  const res = await localRequest(method, url, body instanceof FormData ? formToObject(body) : body);
+  if (res.status === 401 && url !== '/api/login') {
+    onUnauthorized();
+    throw new Error('Session expirée');
+  }
+  if (res.status >= 400) throw Object.assign(new Error(res.body?.error || `Erreur ${res.status}`), { status: res.status });
+  return res.body ?? null;
+}
+
 async function request(method, url, body, { keepalive = false } = {}) {
+  if (LOCAL) return localRequest(method, url, body);
   const opts = { method, headers: {}, keepalive };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
@@ -72,8 +100,14 @@ export const api = {
   listBackups: () => request('GET', '/api/backups'),
   createBackup: () => request('POST', '/api/backups'),
   backupUrl: (name) => `/api/backups/${encodeURIComponent(name)}`,
+  // Téléphone : partager la sauvegarde (Drive, WhatsApp, clé USB…) au lieu d'un lien de téléchargement.
+  shareBackup: async (name) => (await local()).localShareBackup(name),
   // Premier lancement : envoi d'une sauvegarde (peut être gros : XHR pour suivre l'envoi).
   restore(file, code, onProgress) {
+    if (LOCAL) {
+      onProgress?.(1);
+      return localRequest('POST', '/api/restore', { fields: {}, file });
+    }
     return new Promise((resolve, reject) => {
       const form = new FormData();
       form.append('file', file, file.name);
