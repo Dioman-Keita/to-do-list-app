@@ -5,6 +5,9 @@ set -euo pipefail
 APK="$1"
 APP=io.github.diomankeita.journal
 
+# En cas d'échec : ce que la page a écrit dans la console, et les erreurs Android.
+trap 'echo "--- console de la page et erreurs (logcat) ---"; adb logcat -d | grep -E "Capacitor|chromium|AndroidRuntime|SW|ServiceWorker" | tail -80' ERR
+
 devtools() {
   local pid=""
   for _ in $(seq 1 60); do

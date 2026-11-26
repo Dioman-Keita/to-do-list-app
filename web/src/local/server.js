@@ -37,14 +37,21 @@ async function registerMediaWorker() {
   if (!('serviceWorker' in navigator)) throw new Error('Service worker indisponible');
   await navigator.serviceWorker.register('/media-sw.js', { scope: '/' });
   await navigator.serviceWorker.ready;
-  // Premier lancement : la page n'est pas encore contrôlée. On attend que le worker la prenne.
+  // Premier lancement : la page n'est pas encore contrôlée. On attend que le worker la prenne
+  // (clients.claim), sinon un seul rechargement — jamais une boucle.
   if (!navigator.serviceWorker.controller) {
     await new Promise((resolve) => {
       navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
-      setTimeout(resolve, 3000);
+      setTimeout(resolve, 5000);
     });
-    if (!navigator.serviceWorker.controller) location.reload();
   }
+  const KEY = 'journal-sw-recharge';
+  if (navigator.serviceWorker.controller) sessionStorage.removeItem(KEY);
+  else if (!sessionStorage.getItem(KEY)) {
+    sessionStorage.setItem(KEY, '1');
+    location.reload();
+    await new Promise(() => {}); // la page se recharge
+  } else console.error('Service worker des images inactif : les images ne s’afficheront pas.');
 }
 
 const readKey = async (key) => (await pool.query('SELECT value FROM settings WHERE key = $1', [key])).rows[0]?.value ?? null;
