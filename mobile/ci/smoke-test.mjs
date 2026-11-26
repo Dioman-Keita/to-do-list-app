@@ -78,12 +78,18 @@ async function evaluate(expression, timeoutMs = 30000) {
   }
 }
 
+// Ce que l'on sait de la page au moment d'un échec : étape du démarrage, texte affiché.
+let lastState = '?';
+
 async function waitForText(text) {
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline - 15e3) {
+    lastState = await evaluate(
+      `JSON.stringify({ demarrage: globalThis.__journalDemarrage ?? null, texte: document.body.innerText.slice(0, 300), sw: Boolean(navigator.serviceWorker?.controller) })`
+    ).catch((e) => `erreur : ${e.message}`);
     if (await evaluate(`document.body.innerText.includes(${JSON.stringify(text)})`).catch(() => false)) return;
     await wait(1000);
   }
-  throw new Error(`Texte jamais affiché : « ${text} »\n--- page ---\n${await evaluate('document.body.innerText').catch(() => '?')}`);
+  throw new Error(`Texte jamais affiché : « ${text} »`);
 }
 const ok = (label) => log(`OK  ${label}`);
 
@@ -132,5 +138,6 @@ try {
   process.exit(0);
 } catch (err) {
   console.error(`ÉCHEC : ${err.message}`);
+  console.error(`État de la page : ${lastState}`);
   process.exit(1);
 }
