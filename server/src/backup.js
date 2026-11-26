@@ -4,24 +4,21 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import yazl from 'yazl';
 import yauzl from 'yauzl';
-import { DATA_DIR, MIGRATION_COUNT, pool } from './db.js';
+import { DATA_DIR, pool } from './db.js';
+import * as core from './core/backup-data.js';
+import { checkArchive, FORMAT, MAX_DATA, MAX_IMAGE, MAX_MANIFEST, NAME_RE, referencedFiles, RestoreError, stamp, UPLOAD_RE } from './core/backup-data.js';
+
+export { FORMAT, RestoreError };
+export const counts = (client = pool) => core.counts(client);
+export const isPristine = (client = pool) => core.isPristine(client);
+const snapshot = () => core.snapshot(pool);
+const importTables = (data, expected) => core.importTables(pool, data, expected);
 
 // Sauvegarde = un seul fichier « journal_AAAA-MM-JJ_HHMMSS.zip » :
 //   manifest.json  format, version du schéma, date, comptages (pour vérifier une restauration)
 //   data.json      toutes les tables, ligne par ligne (le mot de passe n'y est qu'en empreinte)
 //   uploads/…      toutes les photos, croquis et calques
 // Indépendant du moteur (PGlite ou PostgreSQL) : on peut passer de l'un à l'autre avec.
-
-export const FORMAT = 'journal-sauvegarde';
-const TABLES = ['settings', 'entries', 'tasks', 'media', 'dictionary', 'trash'];
-// « -2 », « -3 »… si deux sauvegardes tombent dans la même seconde.
-const NAME_RE = /^journal_\d{4}-\d{2}-\d{2}_\d{6}(-\d{1,3})?\.zip$/;
-const UPLOAD_RE = /^uploads\/([0-9a-f-]{36}(-t)?\.(jpg|png|webp))$/;
-const COUNT_KEYS = ['journees', 'taches', 'medias', 'caracteres', 'corbeille'];
-// Tailles maximales à la lecture d'une sauvegarde (une archive piégée ne doit pas remplir la mémoire).
-const MAX_MANIFEST = 1024 ** 2;
-const MAX_DATA = 1024 ** 3;
-const MAX_IMAGE = 512 * 1024 ** 2;
 
 const config = {
   dir: path.resolve(process.env.BACKUP_DIR || path.join(DATA_DIR, 'backups')),
@@ -46,45 +43,11 @@ export function initBackups(uploadDir) {
 
 // ---------- Comptages (vérifier qu'une sauvegarde ou une restauration n'a rien perdu) ----------
 
-export async function counts(client = pool) {
-  const { rows } = await client.query(
-    `SELECT (SELECT count(*)::int FROM entries) AS journees,
-            (SELECT count(*)::int FROM tasks) AS taches,
-            (SELECT count(*)::int FROM media) AS medias,
-            (SELECT coalesce(sum(length(content_text)), 0)::int FROM entries) AS caracteres,
-            (SELECT count(*)::int FROM trash) AS corbeille`
-  );
-  return rows[0];
-}
 
-const stamp = (d = new Date()) => {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-};
 
 // ---------- Créer ----------
 
-async function snapshot() {
-  const client = await pool.connect();
-  try {
-    // Lecture cohérente : toutes les tables au même instant.
-    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
-    const data = {};
-    for (const t of TABLES) data[t] = (await client.query(`SELECT * FROM ${t} ORDER BY 1`)).rows;
-    const c = await counts(client);
-    const schema = (await client.query('SELECT coalesce(max(version), 0)::int AS v FROM schema_migrations')).rows[0].v;
-    await client.query('COMMIT');
-    return { data, counts: c, schema };
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
-}
 
-// Fichiers d'images cités par les médias (photo, vignette, calque) : ils doivent tous être dans l'archive.
-const referencedFiles = (media = []) => media.flatMap((m) => [m.file, m.thumb, m.overlay]).filter(Boolean);
 
 class FilesChanged extends Error {}
 
@@ -233,7 +196,6 @@ async function entryBuffer(zip, entry, max) {
   return Buffer.concat(chunks);
 }
 
-export class RestoreError extends Error {}
 
 // Lit et vérifie le fichier, copie les images, puis importe toutes les tables dans UNE transaction
 // et compare les comptages avec ceux de la sauvegarde. En cas de problème, rien n'est gardé.
@@ -280,12 +242,7 @@ async function restoreOnce(file) {
         copied.push(target);
       }
     });
-    if (manifest?.format !== FORMAT || !data) throw new RestoreError('Ce fichier n’est pas une sauvegarde du journal.');
-    if (manifest.schema > MIGRATION_COUNT) {
-      throw new RestoreError('Cette sauvegarde vient d’une version plus récente du journal : mets d’abord le journal à jour.');
-    }
-    const missing = referencedFiles(data.media).filter((f) => !present.has(f));
-    if (missing.length) throw new RestoreError(`Sauvegarde incomplète : ${missing.length} image(s) manquante(s). Rien n’a été importé.`);
+    checkArchive(manifest, data, present);
     await importTables(data, manifest.counts);
     return manifest;
   } catch (err) {
@@ -297,51 +254,5 @@ async function restoreOnce(file) {
   }
 }
 
-async function importTables(data, expected) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    if (!(await isPristine(client))) throw new RestoreError('Ce journal contient déjà des données : la restauration est réservée à un journal neuf.');
-    await client.query('DELETE FROM settings'); // secret de session tout neuf : remplacé par celui de la sauvegarde
-    for (const t of TABLES) {
-      const rows = data[t] || [];
-      if (!rows.length) continue;
-      const { rows: colRows } = await client.query(
-        'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
-        [t]
-      );
-      const known = new Set(colRows.map((r) => r.column_name));
-      // Colonnes présentes dans la sauvegarde : une sauvegarde plus ancienne laisse les nouvelles à leur valeur par défaut.
-      const cols = [...new Set(rows.flatMap(Object.keys))].filter((c) => known.has(c)).map((c) => `"${c}"`).join(', ');
-      for (let i = 0; i < rows.length; i += 500) {
-        await client.query(`INSERT INTO ${t} (${cols}) SELECT ${cols} FROM json_populate_recordset(NULL::${t}, $1::json)`, [
-          JSON.stringify(rows.slice(i, i + 500)),
-        ]);
-      }
-      if (known.has('id')) {
-        await client.query(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), coalesce(max(id), 1), max(id) IS NOT NULL) FROM ${t}`);
-      }
-    }
-    const got = await counts(client);
-    if (!COUNT_KEYS.every((k) => Number.isInteger(expected?.[k]))) throw new RestoreError('Sauvegarde invalide : comptages absents.');
-    const diff = COUNT_KEYS.filter((k) => expected[k] !== got[k]);
-    if (diff.length) throw new RestoreError(`Les comptages ne correspondent pas (${diff.join(', ')}) : rien n’a été importé.`);
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
-}
 
-// Journal neuf : aucun mot de passe et aucune donnée.
-export async function isPristine(client = pool) {
-  const { rows } = await client.query(
-    `SELECT NOT EXISTS (SELECT 1 FROM settings WHERE key = 'password_hash')
-        AND NOT EXISTS (SELECT 1 FROM entries) AND NOT EXISTS (SELECT 1 FROM tasks)
-        AND NOT EXISTS (SELECT 1 FROM media) AND NOT EXISTS (SELECT 1 FROM trash)
-        AND NOT EXISTS (SELECT 1 FROM dictionary) AS pristine`
-  );
-  return rows[0].pristine;
-}
+

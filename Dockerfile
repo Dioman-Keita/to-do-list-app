@@ -4,6 +4,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
+# Le mode autonome (application Android) réutilise le cœur du serveur.
+COPY server/src/core /server/src/core
 RUN npm run build
 
 # --- 2. Serveur Node (API + fichiers statiques) ---

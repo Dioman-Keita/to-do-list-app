@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import express from 'express';
@@ -6,127 +5,54 @@ import multer from 'multer';
 import sharp from 'sharp';
 import { DATA_DIR, engine, pool } from './db.js';
 import { backupConfig, backupPath, backupStatus, createBackup, initBackups, listBackups } from './backup.js';
+import { createJournal, FILE_RE, HttpError, MAX_SIDE, readSettings as readSettingsCore, THUMB_SIDE } from './core/journal.js';
+
+export { COVERS } from './core/journal.js';
 
 export const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(DATA_DIR, 'uploads'));
 await fs.mkdir(UPLOAD_DIR, { recursive: true });
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
-const MAX_SIDE = 2400;
-const THUMB_SIDE = 640;
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MEDIA_COLS = 'id, day, kind, file, thumb, overlay, caption, width, height, tilt, created_at';
-const ENTRY_COLS = 'day, title, body, moods, weather, content, content_text, updated_at';
 // Lu à chaque requête : l'application de bureau démarre LanguageTool après le serveur.
 const spellcheckUrl = () => (process.env.SPELLCHECK_URL || '').replace(/\/$/, '');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
+// ---- Ce qui est propre au serveur : images sur le disque, traitées par Sharp ----
 
-function parseDay(value) {
-  if (!DAY_RE.test(value || '') || Number.isNaN(Date.parse(value))) throw new HttpError(400, 'Date invalide');
-  return value;
-}
+const files = {
+  write: (name, bytes) => fs.writeFile(path.join(UPLOAD_DIR, name), bytes),
+  remove: (...names) => Promise.all(names.filter(Boolean).map((n) => fs.rm(path.join(UPLOAD_DIR, n), { force: true }))),
+};
 
-function parseId(value) {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'Identifiant invalide');
-  return id;
-}
+const images = {
+  // Photo : orientation EXIF appliquée, redimensionnée, JPEG + vignette WebP.
+  async photo(buffer) {
+    const { data, info } = await sharp(buffer, { failOn: 'none' })
+      .rotate()
+      .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 88, mozjpeg: true })
+      .toBuffer({ resolveWithObject: true });
+    const thumb = await sharp(data).resize({ width: THUMB_SIDE, height: THUMB_SIDE, fit: 'inside' }).webp({ quality: 80 }).toBuffer();
+    return { main: data, thumb, width: info.width, height: info.height };
+  },
+  // Dessin (croquis ou calque d'annotation) : PNG transparent.
+  async drawing(buffer, withThumb) {
+    const { data, info } = await sharp(buffer, { failOn: 'none' })
+      .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
+      .png({ compressionLevel: 9 })
+      .toBuffer({ resolveWithObject: true });
+    const thumb = withThumb
+      ? await sharp(data).resize({ width: THUMB_SIDE, height: THUMB_SIDE, fit: 'inside' }).webp({ quality: 85 }).toBuffer()
+      : null;
+    return { main: data, thumb, width: info.width, height: info.height };
+  },
+};
 
-// Texte d'une tâche : une seule phrase (les retours à la ligne deviennent des espaces), 1000 caractères max.
-const TASK_MAX = 1000;
-const oneLine = (value) => String(value ?? '').replace(/\s*\n\s*/g, ' ').trim().slice(0, TASK_MAX);
+// Le cœur du journal (journées, tâches, images, corbeille) : partagé avec l'application Android.
+const journal = createJournal({ pool, files, images });
 
-const randomTilt = () => Math.round((Math.random() * 8 - 4) * 10) / 10;
-
-async function writeFile(name, buffer) {
-  await fs.writeFile(path.join(UPLOAD_DIR, name), buffer);
-  return name;
-}
-
-async function removeFiles(...names) {
-  await Promise.all(names.filter(Boolean).map((n) => fs.rm(path.join(UPLOAD_DIR, n), { force: true })));
-}
-
-// Photo : orientation EXIF appliquée, redimensionnée, JPEG + vignette WebP.
-async function storePhoto(buffer) {
-  const id = crypto.randomUUID();
-  const { data, info } = await sharp(buffer, { failOn: 'none' })
-    .rotate()
-    .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 88, mozjpeg: true })
-    .toBuffer({ resolveWithObject: true });
-  const thumb = await sharp(data).resize({ width: THUMB_SIDE, height: THUMB_SIDE, fit: 'inside' }).webp({ quality: 80 }).toBuffer();
-  return {
-    file: await writeFile(`${id}.jpg`, data),
-    thumb: await writeFile(`${id}-t.webp`, thumb),
-    width: info.width,
-    height: info.height,
-  };
-}
-
-// Dessin (croquis ou calque d'annotation) : PNG transparent.
-async function storeDrawing(buffer, withThumb) {
-  const id = crypto.randomUUID();
-  const { data, info } = await sharp(buffer, { failOn: 'none' })
-    .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
-    .png({ compressionLevel: 9 })
-    .toBuffer({ resolveWithObject: true });
-  const result = { file: await writeFile(`${id}.png`, data), width: info.width, height: info.height };
-  if (withThumb) {
-    const thumb = await sharp(data).resize({ width: THUMB_SIDE, height: THUMB_SIDE, fit: 'inside' }).webp({ quality: 85 }).toBuffer();
-    result.thumb = await writeFile(`${id}-t.webp`, thumb);
-  }
-  return result;
-}
-
-async function findMedia(id) {
-  const { rows } = await pool.query(`SELECT ${MEDIA_COLS} FROM media WHERE id = $1 AND deleted_at IS NULL`, [id]);
-  if (!rows[0]) throw new HttpError(404, 'Introuvable');
-  return rows[0];
-}
-
-// Verrou du déplacement de journée. Toute écriture qui peut remplir une journée (texte, tâche,
-// image, corbeille) le prend en partagé : les écritures ne se bloquent pas entre elles, mais un
-// déplacement (verrou exclusif) attend qu'elles finissent et les fait attendre à son tour. Ainsi la
-// vérification « le jour d'arrivée est vide » reste vraie jusqu'à la fin du déplacement.
-const MOVE_LOCK = "hashtext('journal:move-day')";
-
-async function dayWrite(fn) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query(`SELECT pg_advisory_xact_lock_shared(${MOVE_LOCK})`);
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-// ---- Personnalisation du journal ----
-export const COVERS = ['nuit', 'aube', 'foret', 'tempete', 'phare'];
-
-export async function readSettings() {
-  const { rows } = await pool.query('SELECT key, value FROM settings');
-  const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return {
-    ownerName: s.owner_name || '',
-    title: s.title || '',
-    cover: COVERS.includes(s.cover) ? s.cover : 'nuit',
-    setupDone: s.setup_done === true,
-  };
-}
+export const readSettings = () => readSettingsCore(pool);
 
 initBackups(UPLOAD_DIR);
 
@@ -154,310 +80,6 @@ apiRouter.get('/backups/:name', (req, res) => {
     if (err && !res.headersSent) res.status(404).json({ error: 'Introuvable' });
   });
 });
-
-apiRouter.get(
-  '/settings',
-  ah(async (req, res) => res.json(await readSettings()))
-);
-
-// Enregistre le prénom, le titre et la couverture ; marque la première configuration comme faite.
-apiRouter.put(
-  '/settings',
-  ah(async (req, res) => {
-    const body = req.body || {};
-    const ownerName = String(body.ownerName ?? '').trim().slice(0, 40);
-    const title = String(body.title ?? '').trim().slice(0, 60);
-    if (!ownerName) throw new HttpError(400, 'Le prénom est obligatoire');
-    if (!title) throw new HttpError(400, 'Le titre est obligatoire');
-    if (!COVERS.includes(body.cover)) throw new HttpError(400, 'Couverture inconnue');
-    const values = { owner_name: ownerName, title, cover: body.cover, setup_done: true };
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      for (const [key, value] of Object.entries(values)) {
-        await client.query(
-          `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
-           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-          [key, JSON.stringify(value)]
-        );
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-    res.json(await readSettings());
-  })
-);
-
-// Résumé des jours remplis sur une période (calendrier).
-apiRouter.get(
-  '/days',
-  ah(async (req, res) => {
-    const from = parseDay(req.query.from);
-    const to = parseDay(req.query.to);
-    const { rows } = await pool.query(
-      `WITH d AS (
-         SELECT day FROM entries WHERE day BETWEEN $1 AND $2
-           AND (title <> '' OR body <> '' OR content_text <> '' OR cardinality(moods) > 0)
-         UNION SELECT day FROM tasks WHERE day BETWEEN $1 AND $2
-         UNION SELECT day FROM media WHERE day BETWEEN $1 AND $2 AND deleted_at IS NULL
-       )
-       SELECT d.day, e.title, coalesce(e.moods, '{}') AS moods, e.weather,
-         (SELECT count(*)::int FROM tasks t WHERE t.day = d.day) AS tasks,
-         (SELECT count(*)::int FROM tasks t WHERE t.day = d.day AND t.done) AS done,
-         (SELECT count(*)::int FROM media m WHERE m.day = d.day AND m.deleted_at IS NULL) AS media,
-         (SELECT m.thumb FROM media m WHERE m.day = d.day AND m.deleted_at IS NULL AND m.kind = 'photo'
-            ORDER BY m.id LIMIT 1) AS cover
-       FROM d LEFT JOIN entries e ON e.day = d.day
-       ORDER BY d.day`,
-      [from, to]
-    );
-    res.json(rows);
-  })
-);
-
-apiRouter.get(
-  '/days/:day',
-  ah(async (req, res) => {
-    const day = parseDay(req.params.day);
-    const [entry, tasks, media] = await Promise.all([
-      pool.query(`SELECT ${ENTRY_COLS} FROM entries WHERE day = $1`, [day]),
-      pool.query('SELECT id, day, text, done, position FROM tasks WHERE day = $1 ORDER BY position, id', [day]),
-      pool.query(`SELECT ${MEDIA_COLS} FROM media WHERE day = $1 AND deleted_at IS NULL ORDER BY id`, [day]),
-    ]);
-    res.json({
-      day,
-      entry: entry.rows[0] || { day, title: '', body: '', moods: [], weather: null, content: null, content_text: '' },
-      tasks: tasks.rows,
-      media: media.rows,
-    });
-  })
-);
-
-apiRouter.put(
-  '/days/:day',
-  ah(async (req, res) => {
-    const day = parseDay(req.params.day);
-    const fields = ['title', 'body', 'moods', 'weather', 'content', 'content_text'].filter((f) => f in (req.body || {}));
-    if (!fields.length) throw new HttpError(400, 'Rien à enregistrer');
-    const values = fields.map((f) => {
-      const v = req.body[f];
-      if (f === 'moods') {
-        if (!Array.isArray(v)) throw new HttpError(400, 'Humeurs invalides');
-        return [...new Set(v.map((m) => String(m).slice(0, 32)))].slice(0, 12);
-      }
-      if (f === 'content') {
-        if (v !== null && (typeof v !== 'object' || v.type !== 'doc')) throw new HttpError(400, 'Contenu invalide');
-        return v === null ? null : JSON.stringify(v);
-      }
-      if (f === 'weather') return v ? String(v).slice(0, 32) : null;
-      return String(v ?? '');
-    });
-    const cast = { moods: '::text[]', content: '::jsonb' };
-    const cols = fields.join(', ');
-    const params = fields.map((f, i) => `$${i + 2}${cast[f] || ''}`).join(', ');
-    const updates = fields.map((f) => `${f} = EXCLUDED.${f}`).join(', ');
-    const { rows } = await dayWrite((c) =>
-      c.query(
-        `INSERT INTO entries (day, ${cols}) VALUES ($1, ${params})
-         ON CONFLICT (day) DO UPDATE SET ${updates}, updated_at = now()
-         RETURNING ${ENTRY_COLS}`,
-        [day, ...values]
-      )
-    );
-    res.json(rows[0]);
-  })
-);
-
-// Une journée « vide » : rien d'écrit (titre, texte, humeurs), aucune tâche, aucune image visible.
-// La météo seule ou un carnet vierge ne comptent pas.
-async function dayIsEmpty(client, day) {
-  const { rows } = await client.query(
-    `SELECT NOT EXISTS (SELECT 1 FROM entries WHERE day = $1
-                          AND (title <> '' OR body <> '' OR content_text ~ '\\S' OR cardinality(moods) > 0))
-        AND NOT EXISTS (SELECT 1 FROM tasks WHERE day = $1)
-        AND NOT EXISTS (SELECT 1 FROM media WHERE day = $1 AND deleted_at IS NULL) AS empty`,
-    [day]
-  );
-  return rows[0].empty;
-}
-
-apiRouter.get(
-  '/days/:day/empty',
-  ah(async (req, res) => res.json({ empty: await dayIsEmpty(pool, parseDay(req.params.day)) }))
-);
-
-// Déplacer une journée écrite au mauvais jour vers une journée vide : tout part ensemble
-// (texte, humeurs, météo, tâches, images, et ce qui en est à la corbeille). Rien n'est effacé.
-apiRouter.post(
-  '/days/:day/move',
-  ah(async (req, res) => {
-    const from = parseDay(req.params.day);
-    const to = parseDay(req.body?.to);
-    if (from === to) throw new HttpError(400, 'C’est déjà ce jour-là');
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Exclusif : ni autre déplacement ni écriture sur une journée pendant ce temps (voir dayWrite).
-      await client.query(`SELECT pg_advisory_xact_lock(${MOVE_LOCK})`);
-      if (await dayIsEmpty(client, from)) throw new HttpError(400, 'Cette journée est vide : rien à déplacer');
-      if (!(await dayIsEmpty(client, to))) throw new HttpError(409, 'Ce jour-là a déjà des choses écrites : je ne mélange pas deux journées');
-      // La journée d'arrivée n'a au plus qu'une ligne vide (météo, carnet vierge) : elle laisse la place.
-      // Les conditions sont répétées : jamais une ligne écrite n'est effacée ici.
-      await client.query(
-        `DELETE FROM entries WHERE day = $1
-           AND title = '' AND body = '' AND content_text !~ '\\S' AND cardinality(moods) = 0`,
-        [to]
-      );
-      await client.query('UPDATE entries SET day = $2, updated_at = now() WHERE day = $1', [from, to]);
-      const tasks = await client.query('UPDATE tasks SET day = $2 WHERE day = $1', [from, to]);
-      const media = await client.query('UPDATE media SET day = $2, updated_at = now() WHERE day = $1', [from, to]);
-      await client.query('UPDATE trash SET day = $2 WHERE day = $1', [from, to]);
-      await client.query('COMMIT');
-      res.json({ day: to, tasks: tasks.rowCount, media: media.rowCount });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  })
-);
-
-apiRouter.post(
-  '/days/:day/tasks',
-  ah(async (req, res) => {
-    const day = parseDay(req.params.day);
-    const text = oneLine(req.body?.text);
-    if (!text) throw new HttpError(400, 'Tâche vide');
-    const { rows } = await dayWrite((c) =>
-      c.query(
-        `INSERT INTO tasks (day, text, position)
-         VALUES ($1, $2, (SELECT coalesce(max(position), 0) + 1 FROM tasks WHERE day = $1))
-         RETURNING id, day, text, done, position`,
-        [day, text]
-      )
-    );
-    res.status(201).json(rows[0]);
-  })
-);
-
-apiRouter.patch(
-  '/tasks/:id',
-  ah(async (req, res) => {
-    const id = parseId(req.params.id);
-    const { text, done } = req.body || {};
-    const { rows } = await pool.query(
-      `UPDATE tasks SET text = coalesce($2, text), done = coalesce($3, done)
-       WHERE id = $1 RETURNING id, day, text, done, position`,
-      [id, typeof text === 'string' && oneLine(text) ? oneLine(text) : null, typeof done === 'boolean' ? done : null]
-    );
-    if (!rows[0]) throw new HttpError(404, 'Introuvable');
-    res.json(rows[0]);
-  })
-);
-
-apiRouter.delete(
-  '/tasks/:id',
-  ah(async (req, res) => {
-    await pool.query('DELETE FROM tasks WHERE id = $1', [parseId(req.params.id)]);
-    res.status(204).end();
-  })
-);
-
-// Liste paginée (plus récent d'abord). `before` = "<jour>_<id>" du dernier élément reçu.
-apiRouter.get(
-  '/media',
-  ah(async (req, res) => {
-    const kind = ['photo', 'sketch'].includes(req.query.kind) ? req.query.kind : null;
-    const asked = Math.trunc(Number(req.query.limit));
-    const limit = Number.isFinite(asked) && asked >= 1 ? Math.min(asked, 2000) : 500;
-    let beforeDay = null;
-    let beforeId = null;
-    if (req.query.before) {
-      const [d, id] = String(req.query.before).split('_');
-      beforeDay = parseDay(d);
-      beforeId = parseId(id);
-    }
-    const { rows } = await pool.query(
-      `SELECT ${MEDIA_COLS} FROM media
-       WHERE deleted_at IS NULL AND ($1::text IS NULL OR kind = $1)
-         AND ($3::date IS NULL OR (day, id) < ($3::date, $4::int))
-       ORDER BY day DESC, id DESC LIMIT $2`,
-      [kind, limit + 1, beforeDay, beforeId]
-    );
-    const items = rows.slice(0, limit);
-    const last = items[items.length - 1];
-    res.json({ items, next: rows.length > limit ? `${last.day}_${last.id}` : null });
-  })
-);
-
-apiRouter.post(
-  '/days/:day/media',
-  upload.single('file'),
-  ah(async (req, res) => {
-    const day = parseDay(req.params.day);
-    const kind = req.body?.kind === 'sketch' ? 'sketch' : 'photo';
-    if (!req.file) throw new HttpError(400, 'Aucun fichier');
-    const stored = kind === 'photo' ? await storePhoto(req.file.buffer) : await storeDrawing(req.file.buffer, true);
-    const { rows } = await dayWrite((c) =>
-      c.query(
-        `INSERT INTO media (day, kind, file, thumb, width, height, tilt, caption)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${MEDIA_COLS}`,
-        [day, kind, stored.file, stored.thumb, stored.width, stored.height, randomTilt(), String(req.body?.caption || '')]
-      )
-    );
-    res.status(201).json(rows[0]);
-  })
-);
-
-// Enregistre un dessin : remplace le croquis, ou le calque d'annotation d'une photo.
-apiRouter.put(
-  '/media/:id/drawing',
-  upload.single('file'),
-  ah(async (req, res) => {
-    const media = await findMedia(parseId(req.params.id));
-    if (!req.file) throw new HttpError(400, 'Aucun fichier');
-    let rows;
-    if (media.kind === 'sketch') {
-      const stored = await storeDrawing(req.file.buffer, true);
-      ({ rows } = await pool.query(
-        `UPDATE media SET file = $2, thumb = $3, width = $4, height = $5, updated_at = now()
-         WHERE id = $1 RETURNING ${MEDIA_COLS}`,
-        [media.id, stored.file, stored.thumb, stored.width, stored.height]
-      ));
-      await removeFiles(media.file, media.thumb);
-    } else {
-      const stored = await storeDrawing(req.file.buffer, false);
-      ({ rows } = await pool.query(
-        `UPDATE media SET overlay = $2, updated_at = now() WHERE id = $1 RETURNING ${MEDIA_COLS}`,
-        [media.id, stored.file]
-      ));
-      await removeFiles(media.overlay);
-    }
-    res.json(rows[0]);
-  })
-);
-
-apiRouter.patch(
-  '/media/:id',
-  ah(async (req, res) => {
-    const id = parseId(req.params.id);
-    const { caption, day } = req.body || {};
-    const { rows } = await dayWrite((c) =>
-      c.query(
-        `UPDATE media SET caption = coalesce($2, caption), day = coalesce($3, day), updated_at = now()
-         WHERE id = $1 AND deleted_at IS NULL RETURNING ${MEDIA_COLS}`,
-        [id, typeof caption === 'string' ? caption.slice(0, 200) : null, day ? parseDay(day) : null]
-      )
-    );
-    if (!rows[0]) throw new HttpError(404, 'Introuvable');
-    res.json(rows[0]);
-  })
-);
 
 // Correcteur : relais vers LanguageTool (service local, le texte ne quitte pas la machine).
 // Les mots du dictionnaire personnel ne sont jamais signalés.
@@ -496,174 +118,16 @@ apiRouter.post(
   })
 );
 
-apiRouter.post(
-  '/dictionary',
+// ---- Tout le reste : le cœur partagé ----
+
+apiRouter.use(
+  upload.single('file'),
   ah(async (req, res) => {
-    const word = String(req.body?.word ?? '').trim().toLowerCase().slice(0, 64);
-    if (!word) throw new HttpError(400, 'Mot vide');
-    await pool.query('INSERT INTO dictionary (word) VALUES ($1) ON CONFLICT DO NOTHING', [word]);
-    res.status(201).json({ word });
+    const r = await journal.handle(req.method, req.path, { query: req.query, body: req.body || {}, file: req.file?.buffer || null });
+    if (r.body === undefined) return res.status(r.status).end();
+    res.status(r.status).json(r.body);
   })
 );
-
-// Suppression douce : le fichier reste sur le disque (et dans les sauvegardes).
-apiRouter.delete(
-  '/media/:id',
-  ah(async (req, res) => {
-    await pool.query('UPDATE media SET deleted_at = now() WHERE id = $1', [parseId(req.params.id)]);
-    res.status(204).end();
-  })
-);
-
-// ---- Corbeille (jamais vidée automatiquement, aucune suppression définitive) ----
-
-// Texte brut d'un document du carnet (même forme que getText côté éditeur : un bloc par ligne).
-function docText(node) {
-  if (node.type === 'text') return node.text || '';
-  const inner = (node.content || []).map(docText);
-  return ['doc', 'bulletList', 'orderedList', 'listItem'].includes(node.type) ? inner.join('\n') : inner.join('');
-}
-
-// Ancien texte brut (avant l'éditeur) -> document : un paragraphe par ligne.
-const legacyDoc = (body) => ({
-  type: 'doc',
-  content: String(body || '').split('\n').map((line) => (line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' })),
-});
-
-// Une page arrachée : le client envoie les blocs retirés AVANT de les effacer de la journée.
-apiRouter.post(
-  '/days/:day/trash',
-  ah(async (req, res) => {
-    const day = parseDay(req.params.day);
-    const { blocks, blockIndex } = req.body || {};
-    if (!Array.isArray(blocks) || !blocks.length || blocks.some((b) => !b || typeof b.type !== 'string')) {
-      throw new HttpError(400, 'Page invalide');
-    }
-    const preview = docText({ type: 'doc', content: blocks }).replace(/\s+/g, ' ').trim().slice(0, 280);
-    const index = Number.isInteger(blockIndex) && blockIndex >= 0 ? blockIndex : 0;
-    const { rows } = await dayWrite((c) =>
-      c.query(
-        `INSERT INTO trash (day, content, preview, block_index) VALUES ($1, $2::jsonb, $3, $4)
-         RETURNING id, day, preview, created_at`,
-        [day, JSON.stringify(blocks), preview, index]
-      )
-    );
-    res.status(201).json(rows[0]);
-  })
-);
-
-apiRouter.get(
-  '/trash',
-  ah(async (req, res) => {
-    const [pages, media] = await Promise.all([
-      pool.query(
-        `SELECT id, day, preview, created_at FROM trash WHERE restored_at IS NULL ORDER BY created_at DESC, id DESC`
-      ),
-      pool.query(`SELECT ${MEDIA_COLS}, deleted_at FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC`),
-    ]);
-    res.json({ pages: pages.rows, media: media.rows });
-  })
-);
-
-// Recoller une page à sa place d'origine, sur une page à elle (sauts de page autour).
-apiRouter.post(
-  '/trash/:id/restore',
-  ah(async (req, res) => {
-    const id = parseId(req.params.id);
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`SELECT pg_advisory_xact_lock_shared(${MOVE_LOCK})`);
-      const { rows } = await client.query('SELECT * FROM trash WHERE id = $1 AND restored_at IS NULL FOR UPDATE', [id]);
-      const item = rows[0];
-      if (!item) throw new HttpError(404, 'Déjà recollée ou introuvable');
-      const entry = (await client.query('SELECT content, body FROM entries WHERE day = $1 FOR UPDATE', [item.day])).rows[0];
-      const doc = entry?.content || legacyDoc(entry?.body);
-      const blocks = [...(doc.content || [])];
-      // Une journée vide = un seul paragraphe vide : on le remplace.
-      if (blocks.length === 1 && blocks[0].type === 'paragraph' && !blocks[0].content?.length) blocks.length = 0;
-      const at = Math.min(item.block_index, blocks.length);
-      const isBreak = (b) => b?.type === 'pageBreak';
-      const piece = [...item.content];
-      if (at > 0 && !isBreak(blocks[at - 1]) && !isBreak(piece[0])) piece.unshift({ type: 'pageBreak' });
-      if (at < blocks.length && !isBreak(blocks[at]) && !isBreak(piece[piece.length - 1])) piece.push({ type: 'pageBreak' });
-      blocks.splice(at, 0, ...piece);
-      const content = { ...doc, type: 'doc', content: blocks };
-      await client.query(
-        `INSERT INTO entries (day, content, content_text) VALUES ($1, $2::jsonb, $3)
-         ON CONFLICT (day) DO UPDATE SET content = EXCLUDED.content, content_text = EXCLUDED.content_text, updated_at = now()`,
-        [item.day, JSON.stringify(content), docText(content)]
-      );
-      await client.query('UPDATE trash SET restored_at = now() WHERE id = $1', [id]);
-      await client.query('COMMIT');
-      res.json({ day: item.day });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  })
-);
-
-// Effacer pour toujours (seulement depuis la corbeille, sur demande explicite).
-// Les sauvegardes déjà faites gardent encore l'élément jusqu'à leur rotation.
-apiRouter.delete(
-  '/trash/:id',
-  ah(async (req, res) => {
-    const { rowCount } = await pool.query('DELETE FROM trash WHERE id = $1 AND restored_at IS NULL', [parseId(req.params.id)]);
-    if (!rowCount) throw new HttpError(404, 'Introuvable');
-    res.status(204).end();
-  })
-);
-
-async function purgeMedia(where, params) {
-  const { rows } = await pool.query(`DELETE FROM media WHERE deleted_at IS NOT NULL AND ${where} RETURNING file, thumb, overlay`, params);
-  await Promise.all(rows.map((m) => removeFiles(m.file, m.thumb, m.overlay)));
-  return rows.length;
-}
-
-apiRouter.delete(
-  '/media/:id/forever',
-  ah(async (req, res) => {
-    if (!(await purgeMedia('id = $1', [parseId(req.params.id)]))) throw new HttpError(404, 'Introuvable');
-    res.status(204).end();
-  })
-);
-
-// Vider la corbeille : seulement les éléments affichés quand on a confirmé (identifiants envoyés
-// par l'interface). Ce qui arrive entre-temps (autre appareil) n'est jamais effacé sans avoir été vu.
-const parseIds = (value) => {
-  if (!Array.isArray(value) || value.length > 10000) throw new HttpError(400, 'Liste invalide');
-  return value.map(parseId);
-};
-
-apiRouter.post(
-  '/trash/empty',
-  ah(async (req, res) => {
-    const pageIds = parseIds(req.body?.pageIds);
-    const mediaIds = parseIds(req.body?.mediaIds);
-    const { rowCount } = await pool.query('DELETE FROM trash WHERE restored_at IS NULL AND id = ANY($1::int[])', [pageIds]);
-    const media = await purgeMedia('id = ANY($1::int[])', [mediaIds]);
-    res.json({ pages: rowCount, media });
-  })
-);
-
-apiRouter.post(
-  '/media/:id/restore',
-  ah(async (req, res) => {
-    const { rows } = await dayWrite((c) =>
-      c.query(
-        `UPDATE media SET deleted_at = NULL, updated_at = now() WHERE id = $1 AND deleted_at IS NOT NULL RETURNING ${MEDIA_COLS}`,
-        [parseId(req.params.id)]
-      )
-    );
-    if (!rows[0]) throw new HttpError(404, 'Déjà remise ou introuvable');
-    res.json(rows[0]);
-  })
-);
-
-const FILE_RE = /^[0-9a-f-]{36}(-t)?\.(jpg|png|webp)$/;
 
 export function serveMedia(req, res) {
   if (!FILE_RE.test(req.params.name)) return res.status(404).end();

@@ -1,0 +1,103 @@
+// Migrations du journal, partagées par le serveur (PGlite ou PostgreSQL) et l'application Android
+// (PGlite dans le navigateur). Fichier sans dépendance : importable partout.
+// Chaque entrée est appliquée une seule fois, dans l'ordre. Ne jamais modifier
+// une migration déjà déployée : en ajouter une nouvelle à la fin.
+export const MIGRATIONS = [
+  `CREATE TABLE entries (
+     day date PRIMARY KEY,
+     title text NOT NULL DEFAULT '',
+     body text NOT NULL DEFAULT '',
+     mood text,
+     weather text,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     updated_at timestamptz NOT NULL DEFAULT now()
+   );
+   CREATE TABLE tasks (
+     id serial PRIMARY KEY,
+     day date NOT NULL,
+     text text NOT NULL,
+     done boolean NOT NULL DEFAULT false,
+     position integer NOT NULL DEFAULT 0,
+     created_at timestamptz NOT NULL DEFAULT now()
+   );
+   CREATE INDEX tasks_day_idx ON tasks (day);
+   CREATE TABLE media (
+     id serial PRIMARY KEY,
+     day date NOT NULL,
+     kind text NOT NULL CHECK (kind IN ('photo', 'sketch')),
+     file text NOT NULL,
+     thumb text NOT NULL,
+     overlay text,
+     caption text NOT NULL DEFAULT '',
+     width integer NOT NULL,
+     height integer NOT NULL,
+     tilt real NOT NULL DEFAULT 0,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     updated_at timestamptz NOT NULL DEFAULT now(),
+     deleted_at timestamptz
+   );
+   CREATE INDEX media_day_idx ON media (day) WHERE deleted_at IS NULL;`,
+
+  // Pages, chapitres et humeurs multiples. Migration purement additive : les colonnes
+  // `body` (ancien texte brut) et `mood` restent intactes, rien n'est supprimé.
+  `ALTER TABLE entries ADD COLUMN moods text[] NOT NULL DEFAULT '{}';
+   UPDATE entries SET moods = ARRAY[mood] WHERE mood IS NOT NULL;
+   ALTER TABLE entries ADD COLUMN content jsonb;
+   ALTER TABLE entries ADD COLUMN content_text text NOT NULL DEFAULT '';
+   CREATE TABLE dictionary (
+     word text PRIMARY KEY,
+     created_at timestamptz NOT NULL DEFAULT now()
+   );`,
+
+  // Personnalisation (prénom, titre, couverture). Un journal déjà utilisé est considéré
+  // comme configuré : la première configuration ne s'affiche que sur une installation neuve.
+  `CREATE TABLE settings (
+     key text PRIMARY KEY,
+     value jsonb NOT NULL,
+     updated_at timestamptz NOT NULL DEFAULT now()
+   );
+   INSERT INTO settings (key, value)
+     SELECT 'setup_done', 'true'::jsonb
+     WHERE EXISTS (SELECT 1 FROM entries) OR EXISTS (SELECT 1 FROM tasks) OR EXISTS (SELECT 1 FROM media);`,
+
+  // Corbeille : les pages arrachées y sont gardées pour toujours (jamais vidée automatiquement).
+  // `content` = les blocs du carnet retirés (JSON TipTap), `block_index` = où les recoller.
+  `CREATE TABLE trash (
+     id serial PRIMARY KEY,
+     day date NOT NULL,
+     kind text NOT NULL DEFAULT 'page',
+     content jsonb NOT NULL,
+     preview text NOT NULL DEFAULT '',
+     block_index integer NOT NULL DEFAULT 0,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     restored_at timestamptz
+   );
+   CREATE INDEX trash_waiting_idx ON trash (created_at) WHERE restored_at IS NULL;`,
+];
+
+export const MIGRATION_COUNT = MIGRATIONS.length;
+
+// Applique les migrations manquantes, chacune dans sa transaction.
+export async function applyMigrations(pool, log = console.log) {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+    );
+    const { rows } = await client.query('SELECT coalesce(max(version), 0) AS v FROM schema_migrations');
+    for (let i = Number(rows[0].v); i < MIGRATIONS.length; i++) {
+      await client.query('BEGIN');
+      try {
+        await client.query(MIGRATIONS[i]);
+        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [i + 1]);
+        await client.query('COMMIT');
+        log(`Migration ${i + 1} appliquée`);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    }
+  } finally {
+    client.release();
+  }
+}
