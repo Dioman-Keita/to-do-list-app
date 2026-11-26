@@ -105,7 +105,7 @@ derniers créent des lignes manquantes ou pointillées à certains zooms.
 | `.fmt-bar` / `.fmt` | `JournalEditor.jsx` | Barre de mise en forme du carnet |
 | `.spell-menu`, `.toc`, `.tear-confirm` | `styles.css` | Petits menus flottants : papier, bord encré, ombre décalée. Une confirmation (« Arracher la page 2 ? ») est un de ces bouts de papier au-dessus du pager, jamais une boîte de dialogue |
 | `RestoreBackup` | `RestoreBackup.jsx` | Premier lancement : reprendre une sauvegarde. Même couverture que la connexion, zone de dépôt en pointillés (`.restore-drop`), « Te revoilà ! ✓ » avec les comptages |
-| `.backup-section` | `BackupSection.jsx` | Paramètres → Sauvegardes : dossier surligné, bouton sticker bleu, liste date / taille / « télécharger » |
+| `.backup-section` | `BackupSection.jsx` | Paramètres → Sauvegardes : dossier surligné, bouton sticker bleu, liste date / taille / « télécharger » (téléphone : « partager », ouvre la feuille de partage d'Android) |
 | `.move-day` | `MoveDay.jsx` | Bout de papier scotché au-dessus de la bande du bas : choisir un jour (champ date souligné à l'encre), statut en direct, « annuler » / « Déplacer la journée » |
 | `.trash-scrap` | `TrashView.jsx` | Page arrachée dans la corbeille : `.torn` légèrement penché, aperçu sur 3 lignes, « Recoller » |
 | `.trash-polaroid` | `TrashView.jsx` | Image retirée : polaroïd délavé (gris sépia), bouton « Remettre » |

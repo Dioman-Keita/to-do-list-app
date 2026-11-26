@@ -280,6 +280,69 @@ bloquent les scripts d'installation des paquets. L'installateur est créé dans 
 `server/` et `web/dist/`. `npm start` lance l'application sans l'installer ; `--profile=<dossier>` utilise
 un profil (et donc un journal) séparé.
 
+## 📱 Application Android (APK)
+
+Le dossier [`mobile/`](mobile/) contient une application Android **autonome** : tout le journal tourne
+dans le téléphone, hors ligne, sans serveur ni PC. C'est le même front, et le même cœur que le serveur
+([`server/src/core/`](server/src/core/) : migrations, SQL, règles de la corbeille, du déplacement…) ;
+seuls changent le stockage et le traitement des images.
+
+- **Base** : PGlite (PostgreSQL en WebAssembly), dans le stockage de l'application.
+- **Images** : redressées, réduites et converties en miniatures par le téléphone ; servies par un
+  service worker ([`web/public/media-sw.js`](web/public/media-sw.js)).
+- **Mot de passe** : même empreinte que sur le PC. Le journal se verrouille à chaque lancement.
+- **Sauvegardes** : le même `.zip` que sur le PC, dans `Documents/Journal/Sauvegardes` du téléphone
+  (à la demande et toutes les 24 h), avec un bouton « partager » (Drive, clé USB…).
+- **Premier lancement** : « reprendre une sauvegarde » accepte un `.zip` du PC, et inversement.
+- **Deux journaux séparés** : ce qui est écrit sur le téléphone ne va pas sur le PC. Le passage de
+  l'un à l'autre se fait par une sauvegarde `.zip`.
+- **Désinstaller l'application efface son journal** (pas les sauvegardes dans Documents). Le journal
+  n'est jamais envoyé dans la sauvegarde Google du téléphone (`allowBackup="false"`).
+- **Correcteur** : celui du clavier Android.
+
+### Installer
+
+Télécharge `Journal-x.y.z.apk` depuis les [Releases GitHub](https://github.com/Dioman-Keita/to-do-list-app/releases)
+sur le téléphone, ouvre-le et autorise l'installation depuis cette source (« sources inconnues »).
+Les mises à jour s'installent par-dessus : le journal est gardé.
+
+### Intégration continue et versions
+
+Le workflow [`android.yml`](.github/workflows/android.yml) construit un APK de test à chaque PR qui touche
+`mobile/`, `web/` ou `server/src/core/`, puis le lance dans un téléphone simulé : démarrage de la base,
+images servies, choix du mot de passe, relance (la base doit survivre). L'APK est dans l'onglet **Actions**
+(artefact `journal-android`). Un APK de test est signé avec une clé jetable : désinstaller l'application
+avant d'installer une vraie version.
+
+Publier une version signée (crée une Release GitHub avec l'APK) :
+
+```bash
+git tag android-v1.0.0
+```
+
+```bash
+git push origin android-v1.0.0
+```
+
+La signature utilise **toujours la même clé**, rangée dans les secrets du dépôt (`JOURNAL_KEYSTORE_B64`,
+`JOURNAL_KEYSTORE_PASSWORD`, `JOURNAL_KEY_ALIAS`). Sans elle, Android refuse les mises à jour : il faudrait
+désinstaller, donc effacer le journal. Garde une copie de la clé hors de GitHub (gestionnaire de mots de passe).
+
+### Construire et essayer
+
+```bash
+(cd web && npm install && npm run dev:telephone)
+```
+
+Le journal autonome s'ouvre dans le navigateur sur <http://localhost:5174> (données dans le navigateur).
+Pour le projet Android (il faut Android Studio ou le SDK Android et Java 21) :
+
+```bash
+(cd mobile && npm install && npm run sync && cd android && ./gradlew assembleDebug)
+```
+
+`node mobile/make-icons.mjs` régénère les icônes et l'écran de démarrage.
+
 ## 🛠️ Développement
 
 Aucun service à lancer : sans `DATABASE_URL` ni `PGHOST`, le serveur utilise la base embarquée
@@ -304,6 +367,7 @@ web/           Front React (carnet, éditeur de dessin, albums, calendrier)
 backup/        Sauvegarde / restauration au format PostgreSQL (conteneur `backup`, Docker)
 legacy/        Ancienne to-do list en JavaScript vanilla
 desktop/       Application de bureau Electron : le journal complet, sans Docker (installateur)
+mobile/        Application Android (Capacitor) : le journal autonome dans le téléphone (APK)
 docs/          Captures d'écran et direction artistique (docs/design/)
 .github/       Intégration continue (installateur Windows, publication des versions)
 AGENTS.md      Guide pour les agents IA (CLAUDE.md l'importe)
