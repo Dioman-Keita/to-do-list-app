@@ -17,18 +17,30 @@ let journal = null;
 let unlocked = false;
 
 // Démarre une seule fois : base dans IndexedDB, migrations, sauvegardes automatiques.
+// Étape du démarrage en cours (lue par le test du téléphone simulé en cas de blocage).
+const step = (name) => (globalThis.__journalDemarrage = name);
+
 export function boot() {
   ready ??= (async () => {
-    // Demande au navigateur de ne jamais vider ce stockage pour faire de la place.
-    await navigator.storage?.persist?.().catch(() => {});
+    // Demande au navigateur de ne jamais vider ce stockage. Une WebView peut ne jamais répondre
+    // (pas de fenêtre pour accepter) : on n'attend pas plus d'une seconde.
+    step('stockage persistant');
+    await Promise.race([navigator.storage?.persist?.().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
+    step('base PGlite');
     const db = new PGlite('idb://journal', { parsers: PGLITE_PARSERS, relaxedDurability: false });
     await db.waitReady;
     pool = pglitePool(db);
+    step('migrations');
     await applyMigrations(pool, () => {});
     journal = createJournal({ pool, files, images });
+    step('service worker des images');
     await registerMediaWorker();
     startAutoBackups(pool);
-  })();
+    step('prêt');
+  })().catch((err) => {
+    step(`échec : ${err?.message || err}`);
+    throw err;
+  });
   return ready;
 }
 
