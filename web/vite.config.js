@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 // Deux versions du même front :
 //  - par défaut : parle au serveur (Docker, application de bureau, VPS) ;
-//  - mode « telephone » (VITE_LOCAL=1, voir .env.telephone) : le journal tourne dans la page
+//  - mode « telephone » (lu aussi par src/lib/api.js : import.meta.env.MODE) : le journal tourne dans la page
 //    (src/local : PGlite, images, sauvegardes), pour l'application Android.
 // En version serveur, src/local/server.js est remplacé par une coquille vide : ni PGlite ni son
 // WebAssembly (≈ 15 Mo) ne partent avec.

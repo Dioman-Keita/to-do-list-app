@@ -23,7 +23,7 @@ Interdit : toute ressource du jeu (images, polices, sons, noms) — on recrée l
 | `server/` | API Express (`src/routes.js`, migrations dans `src/db.js`), images traitées par Sharp. Base : PostgreSQL embarqué (PGlite, `DATA_DIR/db`) par défaut, PostgreSQL classique si `DATABASE_URL`/`PGHOST` ; **même SQL pour les deux**. Sauvegardes `.zip` et restauration : `src/backup.js` |
 | `desktop/` | Application Electron : démarre le serveur et la base embarquée dans l'application (sans Docker), ou se connecte à un journal distant |
 | `server/src/core/` | **Cœur partagé** serveur / téléphone : migrations, routes du journal (`journal.js`), format des sauvegardes. Aucune dépendance à Node ni au navigateur : toute règle métier va ici, pas dans `routes.js` |
-| `web/src/local/` | Mode téléphone (`npm run build:telephone`, `VITE_LOCAL=1`) : le « serveur » tourne dans la page (PGlite, images en canvas, IndexedDB, sauvegardes) ; `api.js` lui envoie les requêtes |
+| `web/src/local/` | Mode téléphone (`npm run build:telephone`, mode Vite « telephone ») : le « serveur » tourne dans la page (PGlite, images en canvas, IndexedDB, sauvegardes) ; `api.js` lui envoie les requêtes |
 | `mobile/` | Application Android (Capacitor) autour de la version téléphone du front ; CI dans `.github/workflows/android*.yml` |
 | `backup/` | Sauvegarde / restauration au format PostgreSQL (conteneur `backup`, option Docker) |
 | `.github/workflows/` | CI de l'application de bureau |

@@ -6,7 +6,18 @@ APK="$1"
 APP=io.github.diomankeita.journal
 
 # En cas d'échec : ce que la page a écrit dans la console, et les erreurs Android.
-trap 'echo "--- console de la page et erreurs (logcat) ---"; adb logcat -d | grep -E "Capacitor|chromium|AndroidRuntime|SW|ServiceWorker" | tail -80' ERR
+diagnostic() {
+  echo "--- pages vues par DevTools ---"
+  curl -s http://127.0.0.1:9222/json || true
+  echo "--- console de la page et erreurs (logcat) ---"
+  adb logcat -d | grep -E "Capacitor/Console|Console|chromium.*(ERROR|Uncaught)|AndroidRuntime|FATAL" | tail -120 || true
+  mkdir -p diagnostic
+  adb exec-out screencap -p > diagnostic/ecran.png || true
+  adb logcat -d > diagnostic/logcat.txt || true
+}
+trap diagnostic ERR
+
+echo "WebView du téléphone : $(adb shell dumpsys webviewupdate | grep -i 'Current WebView package' | tr -d '\r')"
 
 devtools() {
   local pid=""

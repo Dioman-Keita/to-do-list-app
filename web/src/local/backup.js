@@ -23,6 +23,9 @@ import { typeOf, uploads } from './store.js';
 export { RestoreError };
 
 const config = { intervalHours: 24, keepDays: 30, keepAtLeast: 5 };
+// Limites d'une restauration sur le téléphone (tout est décompressé en mémoire).
+const MAX_TOTAL = 1.5 * 1024 ** 3;
+const MAX_FILES = 20000;
 const state = { running: null, last: null, lastError: null };
 
 const zipAsync = (files) => new Promise((resolve, reject) => zip(files, (err, out) => (err ? reject(err) : resolve(out))));
@@ -135,10 +138,18 @@ export async function restoreBackup(pool, file) {
     if (!(await isPristine(pool))) throw new RestoreError('Ce journal contient déjà des données : la restauration est réservée à un journal neuf.');
     let entries;
     try {
+      // Tout est décompressé en mémoire : taille totale et nombre de fichiers limités AVANT.
+      let total = 0;
+      let count = 0;
       entries = await unzipAsync(new Uint8Array(await file.arrayBuffer()), (f) => {
         const max = f.name === 'manifest.json' ? MAX_MANIFEST : f.name === 'data.json' ? MAX_DATA : UPLOAD_RE.test(f.name) ? MAX_IMAGE : -1;
         if (max < 0) return false; // dossiers, fichiers inconnus : ignorés
         if (f.originalSize > max) throw new RestoreError(`Sauvegarde invalide : ${f.name} est trop gros.`);
+        total += f.originalSize;
+        count += 1;
+        if (total > MAX_TOTAL || count > MAX_FILES) {
+          throw new RestoreError('Sauvegarde trop grosse pour le téléphone (plus de 1,5 Go ou de 20 000 fichiers).');
+        }
         return true;
       });
     } catch (err) {

@@ -124,9 +124,13 @@ export default function DayView({ day, onOpenMedia, onNewSketch, reloadKey, cont
   // Ne rien perdre en changeant de page ou en fermant l'onglet.
   useEffect(() => {
     const onHide = () => flush(true);
+    // Téléphone : l'application passée en arrière-plan peut être tuée sans « pagehide ».
+    const onVisibility = () => document.visibilityState === 'hidden' && flush(true);
     window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
       flush(true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

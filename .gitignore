@@ -7,3 +7,4 @@ server/public/
 desktop/node_modules/
 desktop/dist/
 web/dist-telephone/
+web/public/__test/

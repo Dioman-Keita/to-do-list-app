@@ -15,6 +15,7 @@ export const FILE_RE = /^[0-9a-f-]{36}(-t)?\.(jpg|png|webp)$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MEDIA_COLS = 'id, day, kind, file, thumb, overlay, caption, width, height, tilt, created_at';
 const ENTRY_COLS = 'day, title, body, moods, weather, content, content_text, updated_at';
+const MEDIA_COLS_M = MEDIA_COLS.split(', ').map((c) => `m.${c}`).join(', ');
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -150,7 +151,10 @@ export function createJournal({ pool, files, images }) {
 
   async function purgeMedia(where, params) {
     const { rows } = await pool.query(`DELETE FROM media WHERE deleted_at IS NOT NULL AND ${where} RETURNING file, thumb, overlay`, params);
-    for (const m of rows) await files.remove(m.file, m.thumb, m.overlay);
+    // Toutes les suppressions sont tentées, même si l'une échoue (les lignes sont déjà effacées).
+    const results = await Promise.allSettled(rows.map((m) => files.remove(m.file, m.thumb, m.overlay)));
+    const failed = results.find((r) => r.status === 'rejected');
+    if (failed) throw failed.reason;
     return rows.length;
   }
 
@@ -358,24 +362,29 @@ export function createJournal({ pool, files, images }) {
   route('PUT', '/media/:id/drawing', async ({ params, file }) => {
     const media = await findMedia(parseId(params.id));
     if (!file) throw new HttpError(400, 'Aucun fichier');
-    let rows;
-    if (media.kind === 'sketch') {
-      const stored = await storeDrawing(file, true);
-      ({ rows } = await pool.query(
-        `UPDATE media SET file = $2, thumb = $3, width = $4, height = $5, updated_at = now()
-         WHERE id = $1 RETURNING ${MEDIA_COLS}`,
-        [media.id, stored.file, stored.thumb, stored.width, stored.height]
-      ));
-      await files.remove(media.file, media.thumb);
-    } else {
-      const stored = await storeDrawing(file, false);
-      ({ rows } = await pool.query(`UPDATE media SET overlay = $2, updated_at = now() WHERE id = $1 RETURNING ${MEDIA_COLS}`, [
-        media.id,
-        stored.file,
-      ]));
-      await files.remove(media.overlay);
+    // Les anciens fichiers sont lus dans la même requête que la mise à jour (verrou de la ligne) :
+    // deux enregistrements simultanés n'effacent jamais le fichier de l'autre.
+    const stored = await storeDrawing(file, media.kind === 'sketch');
+    const set =
+      media.kind === 'sketch'
+        ? { sql: 'file = $2, thumb = $3, width = $4, height = $5', params: [stored.file, stored.thumb, stored.width, stored.height] }
+        : { sql: 'overlay = $2', params: [stored.file] };
+    const { rows } = await pool.query(
+      `UPDATE media m SET ${set.sql}, updated_at = now()
+       FROM (SELECT id, file AS old_file, thumb AS old_thumb, overlay AS old_overlay
+             FROM media WHERE id = $1 AND deleted_at IS NULL FOR UPDATE) o
+       WHERE m.id = o.id
+       RETURNING ${MEDIA_COLS_M}, o.old_file, o.old_thumb, o.old_overlay`,
+      [media.id, ...set.params]
+    );
+    if (!rows[0]) {
+      // La photo a été mise à la corbeille ou effacée entre-temps : le nouveau dessin ne sert à rien.
+      await files.remove(stored.file, stored.thumb);
+      throw new HttpError(404, 'Introuvable');
     }
-    return ok(rows[0]);
+    const { old_file, old_thumb, old_overlay, ...updated } = rows[0];
+    await files.remove(...(media.kind === 'sketch' ? [old_file, old_thumb] : [old_overlay]));
+    return ok(updated);
   });
 
   route('PATCH', '/media/:id', async ({ params, body }) => {
@@ -499,15 +508,27 @@ export function createJournal({ pool, files, images }) {
 
   return {
     // Traite une requête « /chemin » (sans le préfixe /api). Lève HttpError(404) si aucune route.
+    // HEAD : la route GET correspondante, sans corps (comme Express).
     async handle(method, path, { query = {}, body = {}, file = null } = {}) {
+      const head = method === 'HEAD';
       for (const r of routes) {
-        if (r.method !== method) continue;
+        if (r.method !== (head ? 'GET' : method)) continue;
         const m = r.re.exec(path);
         if (!m) continue;
-        const params = Object.fromEntries(Object.entries(m.groups || {}).map(([k, v]) => [k, decodeURIComponent(v)]));
-        return r.fn({ params, query, body: body || {}, file });
+        let params;
+        try {
+          params = Object.fromEntries(Object.entries(m.groups || {}).map(([k, v]) => [k, decodeURIComponent(v)]));
+        } catch {
+          throw new HttpError(400, 'Adresse invalide');
+        }
+        const res = await r.fn({ params, query, body: body || {}, file });
+        return head ? { status: res.status } : res;
       }
       throw new HttpError(404, 'Introuvable');
     },
+
+    // Les deux routes qui reçoivent un fichier (le serveur ne lit un envoi de fichier que pour elles).
+    acceptsFile: (method, path) =>
+      (method === 'POST' && /^\/days\/[^/]+\/media$/.test(path)) || (method === 'PUT' && /^\/media\/[^/]+\/drawing$/.test(path)),
   };
 }

@@ -32,12 +32,37 @@ export function checkNewPassword(password) {
   return null;
 }
 
-// Limite des essais : 10 erreurs en 15 minutes.
-const failures = [];
-export function tooManyAttempts() {
+// Limite des essais : 10 erreurs en 15 minutes. Gardée dans le stockage de l'application :
+// relancer l'application ne remet pas le compteur à zéro.
+const KEY = 'journal-essais';
+const WINDOW_MS = 15 * 60 * 1000;
+function recent() {
+  let list = [];
+  try {
+    list = JSON.parse(localStorage.getItem(KEY) || '[]');
+  } catch {
+    /* stockage illisible : on repart de zéro */
+  }
   const now = Date.now();
-  while (failures.length && now - failures[0] > 15 * 60 * 1000) failures.shift();
-  return failures.length >= 10;
+  return (Array.isArray(list) ? list : []).filter((t) => typeof t === 'number' && t <= now && now - t < WINDOW_MS);
 }
-export const recordFailure = () => failures.push(Date.now());
-export const clearFailures = () => (failures.length = 0);
+const save = (list) => {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    /* stockage plein : la limite reste en mémoire pour cette session */
+  }
+};
+let memory = [];
+export function tooManyAttempts() {
+  memory = memory.filter((t) => Date.now() - t < WINDOW_MS);
+  return Math.max(recent().length, memory.length) >= 10;
+}
+export function recordFailure() {
+  memory.push(Date.now());
+  save([...recent(), Date.now()]);
+}
+export function clearFailures() {
+  memory = [];
+  save([]);
+}

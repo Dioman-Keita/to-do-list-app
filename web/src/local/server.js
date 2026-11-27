@@ -26,6 +26,9 @@ export function boot() {
     // (pas de fenêtre pour accepter) : on n'attend pas plus d'une seconde.
     step('stockage persistant');
     await Promise.race([navigator.storage?.persist?.().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
+    // Une seule instance de la base à la fois (deux onglets écraseraient les fichiers l'un de l'autre).
+    step('verrou de la base');
+    await ownDatabase();
     step('base PGlite');
     const db = new PGlite('idb://journal', { parsers: PGLITE_PARSERS, relaxedDurability: false });
     await db.waitReady;
@@ -33,6 +36,8 @@ export function boot() {
     step('migrations');
     await applyMigrations(pool, () => {});
     journal = createJournal({ pool, files, images });
+    step('brouillons');
+    await replayDrafts();
     step('service worker des images');
     await registerMediaWorker();
     startAutoBackups(pool);
@@ -42,6 +47,48 @@ export function boot() {
     throw err;
   });
   return ready;
+}
+
+// Garde le verrou « journal-base » tant que la page vit. Un autre onglet ne peut pas ouvrir la base.
+function ownDatabase() {
+  if (!navigator.locks) return Promise.resolve(); // pas de Web Locks : une seule fenêtre (application)
+  return new Promise((resolve, reject) => {
+    navigator.locks
+      .request('journal-base', { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          reject(new HttpError(423, 'Le journal est déjà ouvert dans une autre fenêtre.'));
+          return undefined;
+        }
+        resolve();
+        return new Promise(() => {}); // jamais rendu : le verrou dure autant que la page
+      })
+      .catch(reject);
+  });
+}
+
+// Texte enregistré juste avant une fermeture (voir api.js) : rejoué au lancement suivant s'il n'a
+// pas eu le temps d'arriver dans la base.
+export const DRAFTS_KEY = 'journal-brouillons';
+async function replayDrafts() {
+  let drafts = {};
+  try {
+    drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '{}');
+  } catch {
+    return;
+  }
+  for (const [day, { patch }] of Object.entries(drafts)) {
+    try {
+      await journal.handle('PUT', `/days/${day}`, { body: patch });
+      delete drafts[day];
+    } catch (err) {
+      console.error(`Brouillon du ${day} non rejoué :`, err.message);
+    }
+  }
+  try {
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    /* rien de plus à faire */
+  }
 }
 
 // Les images (<img src="/media/…">) sont servies depuis IndexedDB par un service worker.
@@ -138,7 +185,11 @@ async function changePassword(body) {
 
 // Une requête « comme au serveur » : méthode, URL (/api/…), corps JSON ou { fields, file }.
 export async function localRequest(method, url, body) {
-  await boot();
+  try {
+    await boot();
+  } catch (err) {
+    return fail(err instanceof HttpError ? err.status : 503, err.message || 'Le journal ne démarre pas');
+  }
   const u = new URL(url, 'http://journal');
   const path = u.pathname;
   try {

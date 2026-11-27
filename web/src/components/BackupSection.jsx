@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { api, LOCAL } from '../lib/api.js';
+import { api, LOCAL, NATIVE } from '../lib/api.js';
 
 const size = (bytes) => (bytes < 1e6 ? `${Math.max(1, Math.round(bytes / 1e3))} Ko` : `${(bytes / 1e6).toFixed(1).replace('.', ',')} Mo`);
 const when = (iso) =>
@@ -87,7 +87,7 @@ export default function BackupSection() {
               <small>{size(b.size)}</small>
               {LOCAL ? (
                 <button type="button" className="link-button" onClick={() => api.shareBackup(b.name).catch((err) => setError(err.message))}>
-                  partager
+                  {NATIVE ? 'partager' : 'télécharger'}
                 </button>
               ) : (
                 <a className="link-button" href={api.backupUrl(b.name)} download={b.name}>
@@ -100,9 +100,11 @@ export default function BackupSection() {
       )}
       {info && (
         <p className="identity-hint">
-          {LOCAL
+          {NATIVE
             ? 'Elles restent dans Documents même si tu désinstalles l’application. Partage-en une de temps en temps (Drive, clé USB…) : '
-            : 'Garde une copie ailleurs (clé USB, OneDrive…) : '}
+            : LOCAL
+              ? 'Elles sont rangées dans ce navigateur : télécharge-en une avant de vider ses données. '
+              : 'Garde une copie ailleurs (clé USB, OneDrive…) : '}
           sur un autre appareil, le journal te proposera de la reprendre au premier lancement. Les sauvegardes de plus de{' '}
           {info.keepDays} jours sont rangées, les 5 dernières restent toujours.
         </p>

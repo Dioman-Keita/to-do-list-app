@@ -120,8 +120,11 @@ apiRouter.post(
 
 // ---- Tout le reste : le cœur partagé ----
 
+// Envoi de fichier lu seulement sur les deux routes d'images (jamais 30 Mo en mémoire pour rien).
+const uploadIfNeeded = (req, res, next) => (journal.acceptsFile(req.method, req.path) ? upload.single('file')(req, res, next) : next());
+
 apiRouter.use(
-  upload.single('file'),
+  uploadIfNeeded,
   ah(async (req, res) => {
     const r = await journal.handle(req.method, req.path, { query: req.query, body: req.body || {}, file: req.file?.buffer || null });
     if (r.body === undefined) return res.status(r.status).end();

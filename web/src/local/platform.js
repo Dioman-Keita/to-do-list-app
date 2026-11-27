@@ -19,6 +19,10 @@ function toBase64(bytes) {
   return btoa(s);
 }
 
+// Écriture par morceaux de 3 Mo (multiple de 3 : le Base64 de chaque morceau se recolle tel quel),
+// pour ne jamais avoir toute la sauvegarde en Base64 en mémoire. Fichier « .part », renommé à la fin.
+const CHUNK = 3 * 1024 * 1024;
+
 const nativeStore = {
   where: 'Documents/Journal/Sauvegardes',
   async ensurePermission() {
@@ -32,12 +36,22 @@ const nativeStore = {
   },
   async save(name, bytes) {
     await this.ensurePermission();
-    await Filesystem.writeFile({ path: `${DIR}/${name}`, directory: DIRECTORY, data: toBase64(bytes), recursive: true });
+    const part = `${DIR}/${name}.part`;
+    try {
+      await Filesystem.writeFile({ path: part, directory: DIRECTORY, data: toBase64(bytes.subarray(0, CHUNK)), recursive: true });
+      for (let i = CHUNK; i < bytes.length; i += CHUNK) {
+        await Filesystem.appendFile({ path: part, directory: DIRECTORY, data: toBase64(bytes.subarray(i, i + CHUNK)) });
+      }
+      await Filesystem.rename({ from: part, to: `${DIR}/${name}`, directory: DIRECTORY, toDirectory: DIRECTORY });
+    } catch (err) {
+      await Filesystem.deleteFile({ path: part, directory: DIRECTORY }).catch(() => {});
+      throw err;
+    }
   },
   async list() {
     try {
       const { files } = await Filesystem.readdir({ path: DIR, directory: DIRECTORY });
-      return files.filter((f) => f.type !== 'directory').map((f) => ({ name: f.name, size: f.size, created: new Date(Number(f.mtime)).toISOString() }));
+      return files.filter((f) => f.type !== 'directory' && !f.name.endsWith('.part')).map((f) => ({ name: f.name, size: f.size, created: new Date(Number(f.mtime)).toISOString() }));
     } catch {
       return []; // dossier pas encore créé
     }

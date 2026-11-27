@@ -68,7 +68,8 @@ jobs:
         run: |
           v="${VERSION#android-v}"
           if [ -z "$v" ]; then v="0.0.${GITHUB_RUN_NUMBER}"; fi
-          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Version invalide : $v"; exit 1; }
+          # Mineur et correctif sur deux chiffres au plus : le code (a*10000 + b*100 + c) croît toujours.
+          echo "$v" | grep -Eq '^[0-9]{1,4}\.[0-9]{1,2}\.[0-9]{1,2}$' || { echo "Version invalide : $v (ex. 1.2.3, mineur et correctif ≤ 99)"; exit 1; }
           IFS=. read -r a b c <<< "$v"
           echo "VERSION_NAME=$v" >> "$GITHUB_ENV"
           echo "VERSION_CODE=$((a * 10000 + b * 100 + c))" >> "$GITHUB_ENV"
@@ -147,9 +148,16 @@ jobs:
       - name: Lancer le journal dans le téléphone
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 35
           target: google_apis
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: bash mobile/ci/emulator.sh "$(ls out/*.apk | head -1)"
+      - name: Diagnostic (capture d'écran, journal Android)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-telephone
+          path: diagnostic/
+          retention-days: 7

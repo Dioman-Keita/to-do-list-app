@@ -16,7 +16,10 @@ const pending = new Map();
 
 async function connect() {
   for (;;) {
-    if (Date.now() > deadline) throw new Error('WebView introuvable');
+    if (Date.now() > deadline) {
+      const seen = await fetch('http://127.0.0.1:9222/json').then((r) => r.text(), (e) => e.message);
+      throw new Error(`WebView introuvable (cibles DevTools : ${seen.slice(0, 500)})`);
+    }
     try {
       const targets = await (await fetch('http://127.0.0.1:9222/json')).json();
       const t = targets.find((x) => x.type === 'page' && x.url.startsWith('https://localhost'));

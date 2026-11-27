@@ -23,7 +23,8 @@ async function run(store, mode, fn) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, mode);
     const result = fn(tx.objectStore(store));
-    tx.oncomplete = () => resolve(result?.result ?? result);
+    // Une lecture rend son résultat (undefined si la clé n'existe pas), jamais la requête elle-même.
+    tx.oncomplete = () => resolve(result instanceof IDBRequest ? result.result : result);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('Écriture annulée (stockage plein ?)'));
   });

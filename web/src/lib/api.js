@@ -1,5 +1,8 @@
-// Application Android (VITE_LOCAL=1) : le journal tourne dans la page (src/local), sans serveur.
-export const LOCAL = import.meta.env.VITE_LOCAL === '1';
+// Application Android (build en mode « telephone ») : le journal tourne dans la page (src/local),
+// sans serveur. Même décision que vite.config.js (le mode), donc jamais l'un sans l'autre.
+export const LOCAL = import.meta.env.MODE === 'telephone';
+// Le stockage des sauvegardes : Documents du téléphone (application), ou ce navigateur (essais).
+export const NATIVE = LOCAL && Boolean(globalThis.Capacitor?.isNativePlatform?.());
 // En version serveur, vite.config.js remplace ce module par une coquille vide.
 const local = () => import('../local/server.js');
 
@@ -30,8 +33,42 @@ async function localRequest(method, url, body) {
   return res.body ?? null;
 }
 
+// Mode téléphone : le texte d'une journée est d'abord noté dans le stockage de la page (synchrone),
+// puis écrit dans la base. Si l'application est fermée entre les deux, il est rejoué au lancement
+// suivant (src/local/server.js). Effacé une fois écrit, sauf si un texte plus récent l'a remplacé.
+const DRAFTS_KEY = 'journal-brouillons';
+let draftSeq = 0;
+function noteDraft(day, patch) {
+  const seq = ++draftSeq;
+  try {
+    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '{}');
+    drafts[day] = { seq, patch: { ...(drafts[day]?.patch || {}), ...patch } };
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    /* stockage plein : l'écriture dans la base reste la seule copie */
+  }
+  return seq;
+}
+function dropDraft(day, seq) {
+  try {
+    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '{}');
+    if (drafts[day]?.seq !== seq) return;
+    delete drafts[day];
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    /* rejoué au prochain lancement, sans dommage */
+  }
+}
+
 async function request(method, url, body, { keepalive = false } = {}) {
-  if (LOCAL) return localRequest(method, url, body);
+  if (LOCAL) {
+    const day = method === 'PUT' && /^\/api\/days\/(\d{4}-\d{2}-\d{2})$/.exec(url)?.[1];
+    if (!day) return localRequest(method, url, body);
+    const seq = noteDraft(day, body);
+    const res = await localRequest(method, url, body);
+    dropDraft(day, seq);
+    return res;
+  }
   const opts = { method, headers: {}, keepalive };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
