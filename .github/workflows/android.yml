@@ -67,8 +67,13 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           v="${VERSION#android-v}"
-          if [ -z "$v" ]; then v="0.0.${GITHUB_RUN_NUMBER}"; fi
-          # Mineur et correctif sur deux chiffres au plus : le code (a*10000 + b*100 + c) croît toujours.
+          # APK de test (pas de tag) : nom « 0.0.0-test.<n° du passage> », code 1 (jamais publié).
+          if [ -z "$v" ]; then
+            echo "VERSION_NAME=0.0.0-test.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "VERSION_CODE=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Version publiée : mineur et correctif sur deux chiffres au plus, le code (a*10000 + b*100 + c) croît toujours.
           echo "$v" | grep -Eq '^[0-9]{1,4}\.[0-9]{1,2}\.[0-9]{1,2}$' || { echo "Version invalide : $v (ex. 1.2.3, mineur et correctif ≤ 99)"; exit 1; }
           IFS=. read -r a b c <<< "$v"
           echo "VERSION_NAME=$v" >> "$GITHUB_ENV"

@@ -39,38 +39,47 @@ async function localRequest(method, url, body) {
 
 // Mode téléphone : le texte d'une journée est d'abord noté dans le stockage de la page (synchrone),
 // puis écrit dans la base. Si l'application est fermée entre les deux, il est rejoué au lancement
-// suivant (src/local/server.js). Effacé une fois écrit, sauf si un texte plus récent l'a remplacé.
+// suivant (src/local/server.js). Une fois l'écriture confirmée, seuls les champs envoyés ET restés
+// identiques sont retirés : un champ plus récent, ou d'une écriture ratée, reste noté.
 const DRAFTS_KEY = 'journal-brouillons';
-let draftSeq = 0;
-function noteDraft(day, patch) {
-  const seq = ++draftSeq;
+const readDrafts = () => {
   try {
-    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '{}');
-    drafts[day] = { seq, patch: { ...(drafts[day]?.patch || {}), ...patch } };
+    return JSON.parse(localStorage.getItem(DRAFTS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+const writeDrafts = (drafts) => {
+  try {
     localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
   } catch {
     /* stockage plein : l'écriture dans la base reste la seule copie */
   }
-  return seq;
+};
+function noteDraft(day, patch) {
+  const drafts = readDrafts();
+  drafts[day] = { patch: { ...(drafts[day]?.patch || {}), ...patch } };
+  writeDrafts(drafts);
 }
-function dropDraft(day, seq) {
-  try {
-    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '{}');
-    if (drafts[day]?.seq !== seq) return;
-    delete drafts[day];
-    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
-  } catch {
-    /* rejoué au prochain lancement, sans dommage */
+function dropSaved(day, sent) {
+  const drafts = readDrafts();
+  const kept = drafts[day]?.patch;
+  if (!kept) return;
+  for (const [field, value] of Object.entries(sent)) {
+    if (field in kept && JSON.stringify(kept[field]) === JSON.stringify(value)) delete kept[field];
   }
+  if (Object.keys(kept).length) drafts[day] = { patch: kept };
+  else delete drafts[day];
+  writeDrafts(drafts);
 }
 
 async function request(method, url, body, { keepalive = false } = {}) {
   if (LOCAL) {
     const day = method === 'PUT' && /^\/api\/days\/(\d{4}-\d{2}-\d{2})$/.exec(url)?.[1];
     if (!day) return localRequest(method, url, body);
-    const seq = noteDraft(day, body);
+    noteDraft(day, body);
     const res = await localRequest(method, url, body);
-    dropDraft(day, seq);
+    dropSaved(day, body);
     return res;
   }
   const opts = { method, headers: {}, keepalive };
