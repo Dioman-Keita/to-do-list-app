@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, MotionConfig } from 'framer-motion';
-import { api, setUnauthorizedHandler } from './lib/api.js';
+import { api, LOCAL, setUnauthorizedHandler } from './lib/api.js';
 import { Butterfly, SvgFilters } from './components/Decor.jsx';
 import Journal from './components/Journal.jsx';
 import Login from './components/Login.jsx';
@@ -18,7 +18,8 @@ export default function App() {
     api
       .me()
       .then(setAuth)
-      .catch(() => setAuth({ authed: false, name: 'Mon journal' }));
+      // Téléphone : le journal est dans l'application ; une erreur ici n'est pas « serveur injoignable ».
+      .catch((err) => setAuth({ authed: false, name: 'Mon journal', startError: LOCAL ? err.message : '' }));
   }, []);
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function App() {
               onDone={refresh}
             />
           ) : !auth.authed ? (
-            <Login key="login" name={auth.name} onLogin={refresh} />
+            <Login key="login" name={auth.name} startError={auth.startError} onLogin={refresh} />
           ) : auth.needsSetup ? (
             <Onboarding key="onboarding" onDone={applySettings} />
           ) : (

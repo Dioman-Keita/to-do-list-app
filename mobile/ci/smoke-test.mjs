@@ -142,5 +142,15 @@ try {
 } catch (err) {
   console.error(`ÉCHEC : ${err.message}`);
   console.error(`État de la page : ${lastState}`);
+  // Le moteur du journal (assets/server-*.js) : on le recharge pour voir l'erreur exacte.
+  const moduleError = await evaluate(
+    `(async () => {
+      const n = performance.getEntriesByType('resource').map((e) => e.name).find((x) => x.includes('/assets/server-') && x.endsWith('.js'));
+      if (!n) return 'moteur jamais demandé';
+      try { await import(n); return 'moteur chargé sans erreur'; } catch (e) { return String((e && (e.stack || e.message)) || e); }
+    })()`,
+    20000
+  ).catch((e) => `évaluation impossible : ${e.message}`);
+  console.error(`Moteur : ${moduleError}`);
   process.exit(1);
 }

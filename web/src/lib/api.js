@@ -4,7 +4,13 @@ export const LOCAL = import.meta.env.MODE === 'telephone';
 // Le stockage des sauvegardes : Documents du téléphone (application), ou ce navigateur (essais).
 export const NATIVE = LOCAL && Boolean(globalThis.Capacitor?.isNativePlatform?.());
 // En version serveur, vite.config.js remplace ce module par une coquille vide.
-const local = () => import('../local/server.js');
+// Si le moteur ne se charge pas (navigateur trop ancien…), on le dit au lieu de faire croire
+// à un mot de passe à saisir.
+const local = () =>
+  import('../local/server.js').catch((err) => {
+    globalThis.__journalDemarrage = `module : ${err?.message || err}`;
+    throw new Error(`Le journal ne peut pas démarrer sur cet appareil (${err?.message || err}).`);
+  });
 
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => {
