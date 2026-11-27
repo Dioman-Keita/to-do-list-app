@@ -1,0 +1,19 @@
+{
+  "name": "journal-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Le journal aquarelle pour Android, autonome (le journal tourne dans l'application)",
+  "scripts": {
+    "web": "npm --prefix ../web run build:telephone -- --outDir ../mobile/www --emptyOutDir",
+    "sync": "npm run web && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.3",
+    "@capacitor/core": "8.6.3",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.3"
+  }
+}

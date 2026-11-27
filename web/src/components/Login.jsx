@@ -3,9 +3,9 @@ import { motion } from 'framer-motion';
 import { api } from '../lib/api.js';
 import { Star } from './Decor.jsx';
 
-export default function Login({ name, onLogin }) {
+export default function Login({ name, startError = '', onLogin }) {
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(startError);
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {

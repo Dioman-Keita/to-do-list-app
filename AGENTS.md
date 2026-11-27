@@ -22,6 +22,9 @@ Interdit : toute ressource du jeu (images, polices, sons, noms) — on recrée l
 | `web/` | Front React 18 + Vite + Framer Motion ; éditeur TipTap (`components/JournalEditor.jsx`, `editor/extensions.js`) ; tout le CSS dans `src/styles.css` |
 | `server/` | API Express (`src/routes.js`, migrations dans `src/db.js`), images traitées par Sharp. Base : PostgreSQL embarqué (PGlite, `DATA_DIR/db`) par défaut, PostgreSQL classique si `DATABASE_URL`/`PGHOST` ; **même SQL pour les deux**. Sauvegardes `.zip` et restauration : `src/backup.js` |
 | `desktop/` | Application Electron : démarre le serveur et la base embarquée dans l'application (sans Docker), ou se connecte à un journal distant |
+| `server/src/core/` | **Cœur partagé** serveur / téléphone : migrations, routes du journal (`journal.js`), format des sauvegardes. Aucune dépendance à Node ni au navigateur : toute règle métier va ici, pas dans `routes.js` |
+| `web/src/local/` | Mode téléphone (`npm run build:telephone`, mode Vite « telephone ») : le « serveur » tourne dans la page (PGlite, images en canvas, IndexedDB, sauvegardes) ; `api.js` lui envoie les requêtes |
+| `mobile/` | Application Android (Capacitor) autour de la version téléphone du front ; CI dans `.github/workflows/android*.yml` |
 | `backup/` | Sauvegarde / restauration au format PostgreSQL (conteneur `backup`, option Docker) |
 | `.github/workflows/` | CI de l'application de bureau |
 | `docker-compose.yml` | `db`, `app`, `languagetool` (correcteur), `backup`, `caddy` (profil https) |
@@ -51,8 +54,10 @@ cd desktop && npm run dist        # installateur Windows
    - Avant de déployer sur le journal réel : une sauvegarde (Paramètres → Sauvegardes,
      `node src/backup-cli.js`, ou `docker compose exec backup sh /scripts/backup.sh once`), puis
      comparer les comptages avant / après.
-   - Toute nouvelle table doit être ajoutée à `TABLES` dans `server/src/backup.js`, sinon elle
+   - Toute nouvelle table doit être ajoutée à `TABLES` dans `server/src/core/backup-data.js`, sinon elle
      manquera aux sauvegardes. Le SQL doit rester valable pour PGlite **et** PostgreSQL.
+   - Une nouvelle route doit aller dans `server/src/core/journal.js` (pas dans `routes.js`) pour exister
+     aussi sur le téléphone. Tester le mode téléphone : `cd web && npm run dev:telephone`.
    - Toute suppression côté interface est douce (`deleted_at`, corbeille) ou limitée à du vide
      (pages vierges). Seule exception : « effacer » / « Vider la corbeille » dans l'onglet Corbeille,
      voulu par l'utilisateur, toujours derrière une confirmation explicite. Rien ne doit jamais

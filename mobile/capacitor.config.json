@@ -1,0 +1,9 @@
+{
+  "appId": "io.github.diomankeita.journal",
+  "appName": "Journal",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  }
+}

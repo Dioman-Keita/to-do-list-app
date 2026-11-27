@@ -1,0 +1,43 @@
+# Publier une version de l'application Android :
+#   git tag android-v1.0.0 && git push origin android-v1.0.0
+# -> construit l'APK signé (clé du journal, secrets du dépôt) puis crée une Release GitHub avec l'APK.
+name: Publication de l'application Android
+
+on:
+  push:
+    tags: ['android-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/android.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets:
+      JOURNAL_KEYSTORE_B64: ${{ secrets.JOURNAL_KEYSTORE_B64 }}
+      JOURNAL_KEYSTORE_PASSWORD: ${{ secrets.JOURNAL_KEYSTORE_PASSWORD }}
+      JOURNAL_KEY_ALIAS: ${{ secrets.JOURNAL_KEY_ALIAS }}
+
+  release:
+    name: Release GitHub
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: journal-android
+          path: out
+
+      - name: Créer la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" out/*.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Journal pour Android ${TAG#android-v}" \
+            --generate-notes

@@ -1,0 +1,168 @@
+# Application Android : construit l'APK (le journal complet, autonome : base PGlite, images,
+# sauvegardes), le teste dans un téléphone simulé, et le met à disposition (onglet Actions).
+name: Application Android
+
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'web/**'
+      - 'server/src/core/**'
+      - '.github/workflows/android*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'web/**'
+      - 'server/src/core/**'
+      - '.github/workflows/android*.yml'
+  workflow_dispatch:
+  # Réutilisé par android-release.yml pour publier une version signée.
+  workflow_call:
+    inputs:
+      version:
+        description: 'Tag « android-v1.2.3 » ; vide = version de test'
+        type: string
+        default: ''
+    secrets:
+      JOURNAL_KEYSTORE_B64:
+        required: false
+      JOURNAL_KEYSTORE_PASSWORD:
+        required: false
+      JOURNAL_KEY_ALIAS:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: APK Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      # « android-v1.2.3 » -> 1.2.3, code 10203 (variable d'environnement : pas d'injection via le tag).
+      - name: Numéro de version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          v="${VERSION#android-v}"
+          # APK de test (pas de tag) : nom « 0.0.0-test.<n° du passage> », code 1 (jamais publié).
+          if [ -z "$v" ]; then
+            echo "VERSION_NAME=0.0.0-test.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "VERSION_CODE=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Version publiée : mineur et correctif sur deux chiffres au plus, le code (a*10000 + b*100 + c) croît toujours.
+          echo "$v" | grep -Eq '^[0-9]{1,4}\.[0-9]{1,2}\.[0-9]{1,2}$' || { echo "Version invalide : $v (ex. 1.2.3, mineur et correctif ≤ 99)"; exit 1; }
+          IFS=. read -r a b c <<< "$v"
+          echo "VERSION_NAME=$v" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$((a * 10000 + b * 100 + c))" >> "$GITHUB_ENV"
+
+      - name: Journal (version téléphone)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build:telephone -- --outDir ../mobile/www --emptyOutDir
+
+      - name: Projet Android
+        working-directory: mobile
+        run: |
+          npm ci
+          npx cap sync android
+
+      # Version publiée : signée avec LA clé du journal (toujours la même, sinon pas de mise à jour).
+      - name: Clé de signature
+        if: inputs.version != ''
+        env:
+          KEYSTORE_B64: ${{ secrets.JOURNAL_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "Secret JOURNAL_KEYSTORE_B64 absent : impossible de signer la version."; exit 1; fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/journal.p12"
+          echo "JOURNAL_KEYSTORE=$RUNNER_TEMP/journal.p12" >> "$GITHUB_ENV"
+
+      - name: APK
+        working-directory: mobile/android
+        env:
+          JOURNAL_KEYSTORE_PASSWORD: ${{ secrets.JOURNAL_KEYSTORE_PASSWORD }}
+          JOURNAL_KEY_ALIAS: ${{ secrets.JOURNAL_KEY_ALIAS }}
+          RELEASE: ${{ inputs.version != '' }}
+        run: |
+          chmod +x gradlew
+          task=assembleDebug; out=debug
+          if [ "$RELEASE" = "true" ]; then task=assembleRelease; out=release; fi
+          ./gradlew --no-daemon "$task" -PjournalVersionCode="$VERSION_CODE" -PjournalVersionName="$VERSION_NAME"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp "app/build/outputs/apk/$out/app-$out.apk" "$GITHUB_WORKSPACE/out/Journal-$VERSION_NAME.apk"
+          ls -la "$GITHUB_WORKSPACE/out"
+
+      # Version publiée : vérifier qu'elle est bien signée avec la clé du journal.
+      - name: Signature
+        if: inputs.version != ''
+        run: |
+          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$tools/apksigner" verify --print-certs out/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: journal-android
+          path: out/*.apk
+          retention-days: 30
+
+  # Test dans un téléphone simulé (version de test : la WebView s'y laisse piloter).
+  telephone:
+    name: Test sur un téléphone simulé
+    needs: apk
+    if: inputs.version == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: journal-android
+          path: out
+      - name: Accélération matérielle (KVM)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Lancer le journal dans le téléphone
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash mobile/ci/emulator.sh "$(ls out/*.apk | head -1)"
+      - name: Diagnostic (capture d'écran, journal Android)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-telephone
+          path: diagnostic/
+          retention-days: 7
