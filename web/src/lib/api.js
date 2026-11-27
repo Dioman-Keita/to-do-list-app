@@ -1,8 +1,6 @@
 // Application Android (build en mode « telephone ») : le journal tourne dans la page (src/local),
 // sans serveur. Même décision que vite.config.js (le mode), donc jamais l'un sans l'autre.
 export const LOCAL = import.meta.env.MODE === 'telephone';
-// Le stockage des sauvegardes : Documents du téléphone (application), ou ce navigateur (essais).
-export const NATIVE = LOCAL && Boolean(globalThis.Capacitor?.isNativePlatform?.());
 // En version serveur, vite.config.js remplace ce module par une coquille vide.
 // Si le moteur ne se charge pas (navigateur trop ancien…), on le dit au lieu de faire croire
 // à un mot de passe à saisir.

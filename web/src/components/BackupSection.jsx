@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { api, LOCAL, NATIVE } from '../lib/api.js';
+import { api, LOCAL } from '../lib/api.js';
 
 const size = (bytes) => (bytes < 1e6 ? `${Math.max(1, Math.round(bytes / 1e3))} Ko` : `${(bytes / 1e6).toFixed(1).replace('.', ',')} Mo`);
 const when = (iso) =>
@@ -87,7 +87,7 @@ export default function BackupSection() {
               <small>{size(b.size)}</small>
               {LOCAL ? (
                 <button type="button" className="link-button" onClick={() => api.shareBackup(b.name).catch((err) => setError(err.message))}>
-                  {NATIVE ? 'partager' : 'télécharger'}
+                  {info.native ? 'partager' : 'télécharger'}
                 </button>
               ) : (
                 <a className="link-button" href={api.backupUrl(b.name)} download={b.name}>
@@ -100,7 +100,7 @@ export default function BackupSection() {
       )}
       {info && (
         <p className="identity-hint">
-          {NATIVE
+          {info.native
             ? 'Elles restent dans Documents même si tu désinstalles l’application. Partage-en une de temps en temps (Drive, clé USB…) : '
             : LOCAL
               ? 'Elles sont rangées dans ce navigateur : télécharge-en une avant de vider ses données. '

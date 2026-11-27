@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.3",
     "@electric-sql/pglite": "^0.5.16",
     "@fontsource/gochi-hand": "^5.1.0",
     "@fontsource/patrick-hand": "^5.1.0",

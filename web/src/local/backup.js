@@ -17,7 +17,7 @@ import {
   stamp,
   UPLOAD_RE,
 } from '../../../server/src/core/backup-data.js';
-import { backupFiles } from './platform.js';
+import { backupFiles, isNative } from './platform.js';
 import { typeOf, uploads } from './store.js';
 
 export { RestoreError };
@@ -105,6 +105,7 @@ export async function backupInfo() {
     intervalHours: config.intervalHours,
     keepDays: config.keepDays,
     engine: 'telephone',
+    native: isNative, // Documents du téléphone (application) ou ce navigateur (essais)
     items: await listBackups(),
     running: Boolean(state.running),
     last: state.last,

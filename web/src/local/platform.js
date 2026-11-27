@@ -2,13 +2,15 @@
 //  - dans l'application Android : Documents/Journal/Sauvegardes du téléphone (elles survivent à une
 //    désinstallation de l'application), partage par la feuille de partage d'Android ;
 //  - dans un navigateur (essais) : IndexedDB, téléchargement classique.
-// Les modules natifs (Filesystem, Share) sont fournis par l'application Capacitor : rien à installer côté web.
 import { backupsStore } from './store.js';
 
-const cap = globalThis.Capacitor;
-export const isNative = Boolean(cap?.isNativePlatform?.());
-const Filesystem = isNative ? cap.registerPlugin('Filesystem') : null;
-const Share = isNative ? cap.registerPlugin('Share') : null;
+// registerPlugin vient de @capacitor/core (l'objet global injecté par Android ne l'a pas) ;
+// le code natif des modules, lui, est dans l'application (mobile/).
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+export const isNative = Capacitor.isNativePlatform();
+const Filesystem = isNative ? registerPlugin('Filesystem') : null;
+const Share = isNative ? registerPlugin('Share') : null;
 
 const DIR = 'Journal/Sauvegardes';
 const DIRECTORY = 'DOCUMENTS';
