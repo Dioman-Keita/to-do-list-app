@@ -104,7 +104,7 @@ try {
     const sw = await evaluate(`(async () => {
       const c = Boolean(navigator.serviceWorker.controller);
       // Une image rangée comme le fait le journal, puis demandée comme le fait <img>.
-      const db = await new Promise((r, j) => { const q = indexedDB.open('journal-fichiers', 1); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
+      const db = await new Promise((r, j) => { const q = indexedDB.open('journal-fichiers', 1); q.onupgradeneeded = () => { for (const st of ['uploads', 'sauvegardes']) if (!q.result.objectStoreNames.contains(st)) q.result.createObjectStore(st); }; q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
       const name = '00000000-0000-4000-8000-000000000000.png';
       await new Promise((r, j) => { const tx = db.transaction('uploads', 'readwrite'); tx.objectStore('uploads').put(new Blob([new Uint8Array([1,2,3,4,5])], { type: 'image/png' }), name); tx.oncomplete = r; tx.onerror = () => j(tx.error); });
       const res = await fetch('/media/' + name);
